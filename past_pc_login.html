@@ -1,0 +1,158 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"><html><head>
+    
+
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Cache-Control" content="no-cache, no-store">
+
+<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+<meta http-equiv="Expires" content="Sat, 01 Jan 2000 00:00:00 GMT">
+
+    <title>JRA投票照会サービス　ログイン</title>
+  <style type="text/css">
+      .center {
+      	text-align: center;
+      }
+      .mtx1 { margin-top: 1em; }
+      .mtx2 { margin-top: 2em; }
+      .mbx2 { margin-bottom: 2em; }
+      .tx09rem {
+      	font-size: 0.9rem;
+      }
+      .notice_bottom {
+
+        
+        width: 800px;
+
+        padding: 10px;
+        border: 2px solid #333333;
+        display: inline-block;
+        text-align: left;
+        box-sizing: border-box;
+      }
+  </style><script>
+  // クリアボタンを押すと入力欄が空欄になる
+  function clearText() {
+    let uid = document.getElementById("UID");
+    let pwd = document.getElementById("PWD");
+    let pars = document.getElementById("PARS");
+    uid.value = '';
+    pwd.value = '';
+    pars.value = '';
+  }
+  </script></head>
+
+  
+  
+
+
+  <body>
+    
+    
+
+
+
+
+
+
+
+
+
+
+  <table cellspacing="0" cellpadding="2" width="100%" border="0">
+    <tbody><tr>
+      <td bgcolor="#336600">
+      <font size="4" color="#ffffff"><b>ＪＲＡ投票照会サービス</b></font>
+      </td>
+    </tr>
+    <tr>
+      <td bgcolor="#99cc33">
+
+
+      <font size="3" color="#00000f"><b>&nbsp;</b></font>
+
+      </td>
+    </tr>
+  </tbody></table>
+
+    
+    <center>
+      <h2>ログイン</h2>
+      <br>
+      <form action="/jra/servlet/JRAWeb010" method="post">
+
+        <table>
+          <tbody><tr>
+
+            <td><b>加入者(利用者)番号</b></td>
+
+
+            <td><input type="text" name="UID" id="UID" size="10" maxlength="8" value="" style="width: 120px;"></td>
+          </tr>
+          <tr>
+            <td><b>暗証番号</b></td>
+
+
+            <td><input type="password" name="PWD" id="PWD" size="10" maxlength="4" value="" style="width: 120px;"></td>
+          </tr>
+           <tr>
+            <td><b>P-ARS番号</b></td>
+
+
+            <td><input type="text" name="PARS" id="PARS" size="10" maxlength="4" value="" style="width: 120px;"></td>
+
+          </tr>
+        </tbody></table>
+
+        <div class="center mtx1" style="font-size: 14px;">
+        
+          <input type="checkbox" id="holdflag" name="HOLD_FLG" value="1" style=""><label for="holdflag"></label>
+        
+          次回から暗証番号のみを入力
+        </div>
+        <div class="center mtx2 mbx2">
+          <input type="submit" value="ログイン" style="">&nbsp;&nbsp;&nbsp;&nbsp;<button type="button" onclick="clearText()">クリア</button>
+        </div>
+
+        <div class="center tx09rem">
+          加入者番号等がご不明な方は<a href="https://www.clubjranet.jra.go.jp/clubjranet_pc/minfo/PmemberInfoInqInputO" target="_clubJRA">こちら</a>
+        </div>
+
+
+        <br>
+
+        <div class="notice_bottom">
+          <a href="https://jra.jp/company/social/taxation/" target="_blank">払戻金の支払いを受けた方へ・・・勝馬投票券の払戻金は税法上、課税対象となるケースがあります。</a>
+        </div>
+
+
+        <br>
+        <br>
+
+        <div class="notice_bottom">
+          こちらでは過去６０日間の投票内容をご確認いただけます。<br>
+          当日分の照会はネット投票サイトからご確認ください。
+        </div>
+        <br>
+
+      <input type="hidden" name="UID" style="">
+      <input type="hidden" name="PWD" style="">
+      <input type="hidden" name="PARS" style="">
+      <input type="hidden" name="FROM" value="000" style="">
+      <input type="hidden" name="HOLD_FLG" style="">
+
+      </form>
+      <br>
+    </center>
+    
+    
+
+
+
+
+<hr color="#336600">
+<div align="right">Copyright (C) Japan Racing Association.</div>
+
+    
+  
+
+</body></html>
