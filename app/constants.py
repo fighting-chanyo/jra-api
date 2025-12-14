@@ -9,3 +9,18 @@ BET_TYPE_MAP = {
     "３連複": "TRIO",
     "３連単": "TRIFECTA"
 }
+
+# JRA競馬場名 → netkeiba互換コード
+# https://github.com/umatoma/race-id-license/blob/main/LICENSE
+RACE_COURSE_MAP = {
+    "札幌": "01",
+    "函館": "02",
+    "福島": "03",
+    "新潟": "04",
+    "東京": "05",
+    "中山": "06",
+    "中京": "07",
+    "京都": "08",
+    "阪神": "09",
+    "小倉": "10",
+}

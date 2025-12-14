@@ -1,8 +1,13 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-class IpatLoginRequest(BaseModel):
+class IpatAuth(BaseModel):
     inet_id: str
-    subscriber_no: str
-    pin: str
-    p_ars: str
-    sync_mode: str = "recent"  # "recent" (IPAT) or "past" (Club JRA-Net Query)
+    subscriber_number: str = Field(..., alias="subscriber_no") # alias for request body compatibility
+    password: str = Field(..., alias="pin")
+    pars_number: str = Field(..., alias="p_ars")
+
+class SyncIpatRequest(BaseModel):
+    log_id: str
+    user_id: str
+    ipat_auth: IpatAuth
+    sync_mode: str = "past"

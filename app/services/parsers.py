@@ -36,28 +36,30 @@ def parse_jra_csv(csv_path):
                 continue
             
             try:
-                # 日付のフォーマット変換 (YYYYMMDD -> YYYY-MM-DD)
-                raw_date = row[col_map["日付"]]
-                race_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
-
-                # 購入金額の解析 (例: "100／300" -> 300)
+                # 購入金額 (単価と合計)
                 amount_str = row[col_map["購入金額"]]
+                amount_per_point, total_cost = 0, 0
                 if '／' in amount_str:
-                    amount = int(amount_str.split('／')[1])
+                    parts = amount_str.split('／')
+                    amount_per_point = int(parts[0])
+                    total_cost = int(parts[1])
                 else:
-                    amount = int(amount_str)
+                    amount_per_point = int(amount_str)
+                    total_cost = int(amount_str)
 
+                # 払戻金
                 payout_str = row[col_map["払戻金額"]].replace(',', '')
                 payout = int(payout_str) if payout_str.isdigit() else 0
                 
-                status = "LOSE"
+                # ステータス
+                status = "PENDING" # DB保存時はPENDINGをデフォルトに
                 if "的中" in row[col_map["的中／返還"]]:
                     status = "WIN"
-                
+                elif payout == 0 and amount_per_point > 0:
+                    status = "LOSE"
+
                 shikibetsu_str = row[col_map["式別"]]
                 kumiban_str = row[col_map["馬／組番"]]
-
-                # 【修正】半角の'3'を全角の'３'に置換し、辞書のキーと確実に一致させる
                 normalized_shikibetsu_str = shikibetsu_str.replace('3', '３')
 
                 # 式別コードの特定
@@ -67,53 +69,51 @@ def parse_jra_csv(csv_path):
                         bet_type_code = en
                         break
                 
-                # 投票方法と馬番の解析
-                method = "NORMAL"
-                multi = False
-                axis = []
-                partners = []
-                selections = []
+                method, multi, axis, partners, selections = "NORMAL", False, [], [], []
 
                 if "ＢＯＸ" in shikibetsu_str or "ボックス" in shikibetsu_str:
                     method = "BOX"
                     selections = [kumiban_str.split('；')]
                 elif "フォーメーション" in shikibetsu_str:
                     method = "FORMATION"
-                    parts = kumiban_str.split('／')
-                    selections = [part.split('；') for part in parts]
+                    selections = [part.split('；') for part in kumiban_str.split('／')]
                 elif "ながし" in shikibetsu_str:
                     method = "NAGASHI"
-                    if "マルチ" in shikibetsu_str:
-                        multi = True
+                    if "マルチ" in shikibetsu_str: multi = True
                     parts = kumiban_str.split('／')
-                    # 軸が2つの場合(09；10／...)と1つの場合(01／...)両方に対応
                     if len(parts) >= 2:
                         axis = parts[0].split('；')
                         partners = parts[1].split('；')
-                else: # NORMAL
-                    # "03-08", "8" のような形式に対応
+                else:
                     selections = [re.findall(r'\d+', kumiban_str)]
 
-                content_json = {
-                    "type": bet_type_code,
-                    "method": method,
-                    "multi": multi,
-                    "axis": axis,
-                    "partners": partners,
-                    "selections": selections
+                # DB保存用に構造化して返す
+                ticket_data = {
+                    "raw": {
+                        "receipt_no": row[col_map["受付番号"]],
+                        "line_no": row[col_map["通番"]],
+                        "race_date_str": row[col_map["日付"]], # YYYYMMDD
+                        "race_place": row[col_map["場名"]],
+                        "race_number_str": row[col_map["レース"]], # "R"なし
+                    },
+                    "parsed": {
+                        "bet_type": bet_type_code,
+                        "buy_type": method,
+                        "content": {
+                            "type": bet_type_code,
+                            "method": method,
+                            "multi": multi,
+                            "axis": axis,
+                            "partners": partners,
+                            "selections": selections
+                        },
+                        "amount_per_point": amount_per_point,
+                        "total_cost": total_cost,
+                        "payout": payout,
+                        "status": status,
+                    }
                 }
-
-                ticket = {
-                    "race_place": row[col_map["場名"]],
-                    "race_number": row[col_map["レース"]] + "R",
-                    "race_date": race_date,
-                    "content": content_json,
-                    "amount": amount,
-                    "payout": payout,
-                    "status": status,
-                    "mode": "REAL"
-                }
-                results.append(ticket)
+                results.append(ticket_data)
             except (IndexError, KeyError, ValueError) as e:
                 print(f"      ⚠️ CSV Row Parse Error: {e} | Row: {row}")
 
