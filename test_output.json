@@ -1,0 +1,2374 @@
+[
+  {
+    "race_place": "中山",
+    "race_number": "7R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "EXACTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01"
+        ],
+        [
+          "08"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 4400,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "中山",
+    "race_number": "8R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "13",
+          "14"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "中山",
+    "race_number": "8R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "14",
+          "16"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "中山",
+    "race_number": "8R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "05",
+          "14"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "阪神",
+    "race_number": "9R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "BRACKET_QUINELLA",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "4",
+          "4"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "阪神",
+    "race_number": "9R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "BRACKET_QUINELLA",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "4",
+          "6"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "阪神",
+    "race_number": "9R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "BRACKET_QUINELLA",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "4",
+          "8"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "中山",
+    "race_number": "9R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "QUINELLA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "12"
+        ],
+        [
+          "01",
+          "04",
+          "06",
+          "08"
+        ]
+      ]
+    },
+    "amount": 800,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "阪神",
+    "race_number": "10R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "06",
+          "10",
+          "17"
+        ],
+        [
+          "06",
+          "09",
+          "10",
+          "13",
+          "17"
+        ],
+        [
+          "03",
+          "06",
+          "09",
+          "10",
+          "13",
+          "15",
+          "17",
+          "18"
+        ]
+      ]
+    },
+    "amount": 7200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "中京",
+    "race_number": "11R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "09",
+          "11",
+          "16"
+        ]
+      ]
+    },
+    "amount": 12000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "中山",
+    "race_number": "11R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "QUINELLA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "04",
+          "08"
+        ],
+        [
+          "03",
+          "04",
+          "05",
+          "07",
+          "08",
+          "15"
+        ]
+      ]
+    },
+    "amount": 2700,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "阪神",
+    "race_number": "12R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "EXACTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "15"
+        ],
+        [
+          "01",
+          "06",
+          "10"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "阪神",
+    "race_number": "12R",
+    "race_date": "2025-12-07",
+    "content": {
+      "type": "EXACTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "15"
+        ],
+        [
+          "01",
+          "02",
+          "06",
+          "09",
+          "10",
+          "13",
+          "17"
+        ]
+      ]
+    },
+    "amount": 2800,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "阪神",
+    "race_number": "12R",
+    "race_date": "2025-12-06",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "NAGASHI",
+      "multi": true,
+      "axis": [
+        "07",
+        "06"
+      ],
+      "partners": [
+        "05",
+        "09",
+        "10",
+        "12",
+        "13"
+      ],
+      "selections": []
+    },
+    "amount": 3000,
+    "payout": 4490,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "02",
+          "04"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01"
+        ],
+        [
+          "01",
+          "02",
+          "04"
+        ],
+        [
+          "01",
+          "02",
+          "04"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "1R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "WIN",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "08"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "1R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "08"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "2R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "04"
+      ],
+      "partners": [
+        "02",
+        "03",
+        "08",
+        "11",
+        "13"
+      ],
+      "selections": []
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "3R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "EXACTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "12"
+        ],
+        [
+          "10",
+          "11",
+          "13",
+          "15",
+          "16"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "4R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "06",
+          "13"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 2700,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "5R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIO",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "09",
+        "10"
+      ],
+      "partners": [
+        "02",
+        "03",
+        "06",
+        "07",
+        "15"
+      ],
+      "selections": []
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "1R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "WIN",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "12"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "1R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "12"
+        ],
+        [
+          "13"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "2R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "04",
+          "05",
+          "06",
+          "08"
+        ]
+      ]
+    },
+    "amount": 600,
+    "payout": 190,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "3R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "WIN",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 2480,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "3R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "10"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "4R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "02",
+          "03",
+          "04"
+        ]
+      ]
+    },
+    "amount": 600,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "5R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "07"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "7R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "04",
+          "09",
+          "12"
+        ]
+      ]
+    },
+    "amount": 900,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "7R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "12"
+        ],
+        [
+          "03",
+          "08",
+          "13",
+          "16"
+        ]
+      ]
+    },
+    "amount": 400,
+    "payout": 2940,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "8R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "06",
+          "07"
+        ],
+        [
+          "06",
+          "07"
+        ],
+        [
+          "01",
+          "02",
+          "03",
+          "04",
+          "05",
+          "06",
+          "07",
+          "08"
+        ]
+      ]
+    },
+    "amount": 2400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "8R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "01"
+      ],
+      "partners": [
+        "02",
+        "03",
+        "04",
+        "06",
+        "07",
+        "08"
+      ],
+      "selections": []
+    },
+    "amount": 600,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "8R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "02"
+        ],
+        [
+          "01",
+          "05"
+        ],
+        [
+          "01",
+          "03",
+          "04",
+          "05",
+          "06",
+          "07",
+          "08"
+        ]
+      ]
+    },
+    "amount": 1200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "9R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "05"
+        ],
+        [
+          "01",
+          "02",
+          "03",
+          "04",
+          "06",
+          "07",
+          "08",
+          "09"
+        ]
+      ]
+    },
+    "amount": 1500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "9R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "07"
+        ],
+        [
+          "03",
+          "07"
+        ],
+        [
+          "01",
+          "02",
+          "03",
+          "04",
+          "05",
+          "06",
+          "07",
+          "08",
+          "09"
+        ]
+      ]
+    },
+    "amount": 1400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "9R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "04"
+      ],
+      "partners": [
+        "09",
+        "11"
+      ],
+      "selections": []
+    },
+    "amount": 1000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "10R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "05",
+          "10",
+          "15",
+          "16"
+        ]
+      ]
+    },
+    "amount": 1000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "WIN",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "10R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01"
+        ],
+        [
+          "04",
+          "05",
+          "07",
+          "08",
+          "16"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "QUINELLA",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "02",
+          "06",
+          "12",
+          "14",
+          "16"
+        ]
+      ]
+    },
+    "amount": 1000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "14",
+          "15"
+        ],
+        [
+          "01",
+          "05",
+          "11",
+          "16",
+          "18"
+        ],
+        [
+          "01",
+          "02",
+          "05",
+          "11",
+          "14",
+          "15",
+          "16",
+          "18"
+        ]
+      ]
+    },
+    "amount": 6000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "16"
+        ],
+        [
+          "01",
+          "02",
+          "05",
+          "11",
+          "14",
+          "15",
+          "18"
+        ],
+        [
+          "01",
+          "02",
+          "05",
+          "11",
+          "14",
+          "15",
+          "18"
+        ]
+      ]
+    },
+    "amount": 4200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "05"
+        ],
+        [
+          "01",
+          "02",
+          "11",
+          "14",
+          "15",
+          "16",
+          "18"
+        ],
+        [
+          "01",
+          "02",
+          "04",
+          "06",
+          "10",
+          "11",
+          "12",
+          "14",
+          "15",
+          "16",
+          "18"
+        ]
+      ]
+    },
+    "amount": 7000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "14",
+          "15"
+        ],
+        [
+          "14",
+          "15"
+        ],
+        [
+          "01",
+          "02",
+          "03",
+          "04",
+          "05",
+          "06",
+          "07",
+          "08",
+          "09",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "18"
+        ]
+      ]
+    },
+    "amount": 3000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "12R",
+    "race_date": "2025-11-30",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "04"
+        ],
+        [
+          "01",
+          "04",
+          "12"
+        ],
+        [
+          "01",
+          "04",
+          "06",
+          "09",
+          "12",
+          "13",
+          "18"
+        ]
+      ]
+    },
+    "amount": 10000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "02",
+          "04"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01"
+        ],
+        [
+          "01",
+          "02",
+          "04"
+        ],
+        [
+          "01",
+          "02",
+          "04"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "1R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "02"
+        ],
+        [
+          "01",
+          "02",
+          "05",
+          "06",
+          "07",
+          "08",
+          "09",
+          "10",
+          "11",
+          "12"
+        ]
+      ]
+    },
+    "amount": 1700,
+    "payout": 2720,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "1R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "05",
+          "07"
+        ],
+        [
+          "04",
+          "05",
+          "06",
+          "07",
+          "08",
+          "09",
+          "12",
+          "13"
+        ]
+      ]
+    },
+    "amount": 1300,
+    "payout": 730,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "2R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "04",
+          "05",
+          "09",
+          "10"
+        ]
+      ]
+    },
+    "amount": 1000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "2R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "02",
+          "07",
+          "09",
+          "11"
+        ]
+      ]
+    },
+    "amount": 1000,
+    "payout": 250,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "3R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "06",
+          "10",
+          "12"
+        ]
+      ]
+    },
+    "amount": 600,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "3R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "4R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "11"
+        ],
+        [
+          "10",
+          "15"
+        ]
+      ]
+    },
+    "amount": 600,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "4R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "06"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "4R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "06"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 600,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "5R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "06"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "5R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "08"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "6R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "WIN",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "07"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "6R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "WIN",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "6R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "07"
+        ]
+      ]
+    },
+    "amount": 400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "6R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "07",
+          "10"
+        ]
+      ]
+    },
+    "amount": 100,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "7R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "EXACTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "13",
+          "15"
+        ],
+        [
+          "07",
+          "10",
+          "13",
+          "15"
+        ]
+      ]
+    },
+    "amount": 600,
+    "payout": 600,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "7R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "16"
+        ],
+        [
+          "17"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "7R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "05",
+        "16"
+      ],
+      "partners": [
+        "03",
+        "04",
+        "09",
+        "17"
+      ],
+      "selections": []
+    },
+    "amount": 400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "7R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "05",
+        "17"
+      ],
+      "partners": [
+        "03",
+        "04",
+        "09",
+        "16"
+      ],
+      "selections": []
+    },
+    "amount": 400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "8R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "09"
+        ],
+        [
+          "07"
+        ]
+      ]
+    },
+    "amount": 400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "8R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "09"
+        ],
+        [
+          "12"
+        ]
+      ]
+    },
+    "amount": 200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "8R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "09"
+      ],
+      "partners": [
+        "04",
+        "07",
+        "10",
+        "12",
+        "14"
+      ],
+      "selections": []
+    },
+    "amount": 1000,
+    "payout": 2070,
+    "status": "WIN",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "8R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "11"
+        ],
+        [
+          "15"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "8R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "11"
+      ],
+      "partners": [
+        "03",
+        "07",
+        "13",
+        "15"
+      ],
+      "selections": []
+    },
+    "amount": 600,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "9R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "04"
+        ]
+      ]
+    },
+    "amount": 400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "9R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "07"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "9R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "01",
+        "04"
+      ],
+      "partners": [
+        "05",
+        "07",
+        "12"
+      ],
+      "selections": []
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "9R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "06"
+        ],
+        [
+          "03"
+        ]
+      ]
+    },
+    "amount": 600,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "9R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NAGASHI",
+      "multi": false,
+      "axis": [
+        "06"
+      ],
+      "partners": [
+        "03",
+        "04",
+        "11",
+        "13"
+      ],
+      "selections": []
+    },
+    "amount": 600,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "11",
+          "16"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "15",
+          "16"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "08",
+          "16"
+        ]
+      ]
+    },
+    "amount": 400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "03"
+        ]
+      ]
+    },
+    "amount": 1200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "07"
+        ]
+      ]
+    },
+    "amount": 500,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "03",
+          "11"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "03",
+          "06"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "03",
+          "07"
+        ]
+      ]
+    },
+    "amount": 400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "10R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIO",
+      "method": "NORMAL",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "03",
+          "08"
+        ]
+      ]
+    },
+    "amount": 300,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "11R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "QUINELLA_PLACE",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "09"
+        ],
+        [
+          "02",
+          "05",
+          "06",
+          "10",
+          "15"
+        ]
+      ]
+    },
+    "amount": 2000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "11R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "09"
+        ],
+        [
+          "05",
+          "06",
+          "10"
+        ],
+        [
+          "02",
+          "05",
+          "06",
+          "10",
+          "15"
+        ]
+      ]
+    },
+    "amount": 1200,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "11R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "06",
+          "07",
+          "10",
+          "11"
+        ]
+      ]
+    },
+    "amount": 2400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "東京",
+    "race_number": "12R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "FORMATION",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "03",
+          "04"
+        ],
+        [
+          "03",
+          "04",
+          "07"
+        ],
+        [
+          "03",
+          "04",
+          "05",
+          "06",
+          "07"
+        ]
+      ]
+    },
+    "amount": 2400,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  },
+  {
+    "race_place": "京都",
+    "race_number": "12R",
+    "race_date": "2025-11-29",
+    "content": {
+      "type": "TRIFECTA",
+      "method": "BOX",
+      "multi": false,
+      "axis": [],
+      "partners": [],
+      "selections": [
+        [
+          "01",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      ]
+    },
+    "amount": 6000,
+    "payout": 0,
+    "status": "LOSE",
+    "mode": "REAL"
+  }
+]
