@@ -1,7 +1,8 @@
 import os
 import json
-from app.schemas import IpatLoginRequest
-from app.services.ipat_scraper import sync_past_history
+import traceback
+from app.schemas import IpatAuth
+from app.services.ipat_scraper import _scrape_past_history_csv
 from dotenv import load_dotenv
 
 # .envファイルから環境変数を読み込む
@@ -25,54 +26,43 @@ def run_test():
         return
 
     # テスト用のリクエストデータを作成
-    test_creds = IpatLoginRequest(
+    test_creds = IpatAuth(
         inet_id=inet_id,
-        subscriber_no=subscriber_no,
-        pin=pin,
-        p_ars=p_ars
+        subscriber_number=subscriber_no,
+        password=pin,
+        pars_number=p_ars
     )
 
-    print("- Target: sync_past_history (CSV Download & Parse)")
+    print("- Target: _scrape_past_history_csv (CSV Download & Parse)")
     print(f"- User: {subscriber_no}")
 
     try:
         # メインの処理を実行
-        result = sync_past_history(test_creds)
+        result = _scrape_past_history_csv(test_creds)
 
         # 結果を出力
         print("\n" + "="*20 + " TEST RESULT " + "="*20)
-        if result and result.get("data"):
-            # --- ここから追加 ---
+        if result:
             output_filename = "test_output.json"
             with open(output_filename, "w", encoding="utf-8") as f:
-                json.dump(result['data'], f, indent=2, ensure_ascii=False)
+                # result は dict のリストなのでそのままダンプ可能
+                json.dump(result, f, indent=2, ensure_ascii=False)
             
-            print(f"✅ Success! Found {len(result['data'])} tickets.")
+            print(f"✅ Success! Found {len(result)} tickets.")
             print(f"📄 Full parsed data has been written to '{output_filename}'.")
-            # --- ここまで追加 ---
+            
+            # サンプル表示
+            if len(result) > 0:
+                print("--- Sample Data (First ticket) ---")
+                print(json.dumps(result[0], indent=2, ensure_ascii=False))
+                print("------------------------------------")
 
-            print("--- Sample Data (First ticket) ---")
-            print(json.dumps(result['data'][0], indent=2, ensure_ascii=False))
-            print("------------------------------------")
-            print("--- Sample Data (Last ticket) ---")
-            print(json.dumps(result['data'][-1], indent=2, ensure_ascii=False))
-            print("------------------------------------")
-        elif result and "data" in result and not result["data"]:
-             print(f"✅ Success! Process finished but no tickets were found.")
-             print(json.dumps(result, indent=2, ensure_ascii=False))
         else:
-            print("⚠️ Test finished but received an unexpected result.")
-            print(result)
-
+            print("⚠️ No tickets found (result is empty list).")
 
     except Exception as e:
-        print("\n" + "="*20 + " TEST FAILED " + "="*20)
-        print(f"❌ An exception occurred: {e}")
-        import traceback
+        print(f"❌ Test Failed: {e}")
         traceback.print_exc()
-
-    print("\n" + "="*53)
-
 
 if __name__ == "__main__":
     run_test()

@@ -58,7 +58,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
             # チケットが0件でも正常終了とする
             supabase.table("sync_logs").update({
                 "status": "COMPLETED",
-                "message": "Synced 0 tickets. No betting data found."
+                "message": "同期が完了しました。投票履歴は見つかりませんでした。"
             }).eq("id", log_id).execute()
             print(f"✅ BACKGROUND JOB COMPLETED: No tickets found for log_id: {log_id}")
             return
@@ -73,7 +73,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
         # --- 成功時のログ更新（既存の upsert の直後に置き換え） ---
         update_payload = {
             "status": "COMPLETED",
-            "message": f"Synced {len(db_records)} tickets successfully."
+            "message": f"同期が完了しました。{len(db_records)} 件の投票履歴を保存しました。"
         }
         res = supabase.table("sync_logs").update(update_payload).eq("id", log_id).execute()
 
@@ -91,7 +91,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
                 insert_payload = {
                     "id": log_id,
                     "status": "COMPLETED",
-                    "message": f"Synced {len(db_records)} tickets successfully."
+                    "message": f"同期が完了しました。{len(db_records)} 件の投票履歴を保存しました。"
                 }
                 ins_res = supabase.table("sync_logs").insert(insert_payload).execute()
                 ins_error = getattr(ins_res, "error", None) if hasattr(ins_res, "error") else ins_res.get("error") if isinstance(ins_res, dict) else None
@@ -105,7 +105,19 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
         print(f"✅ BACKGROUND JOB COMPLETED for log_id: {log_id}")
 
     except Exception as e:
-        error_message = f"An error occurred: {str(e)}"
+        # エラーメッセージの翻訳
+        error_str = str(e)
+        user_friendly_error = error_str
+        
+        if "Login Failed: Invalid Credentials" in error_str:
+            user_friendly_error = "ログインに失敗しました。加入者番号、暗証番号、P-ARS番号を確認してください。"
+        elif "Session timed out" in error_str:
+            user_friendly_error = "セッションがタイムアウトしました。もう一度お試しください。"
+        elif "Login Failed or Menu Changed" in error_str:
+            user_friendly_error = "ログイン後の画面遷移に失敗しました。メンテナンス中の可能性があります。"
+        
+        error_message = f"エラーが発生しました: {user_friendly_error}"
+        
         print(f"❌ BACKGROUND JOB FAILED for log_id: {log_id}. Error: {error_message}")
         try:
             res = supabase.table("sync_logs").update({
@@ -139,6 +151,40 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
                 f.write(f"Additionally failed to update sync_logs for log_id={log_id}\nError: {db_error}\nOriginal error: {error_message}\n")
             print(f"❌ Wrote debug log to {fname}")
 
+def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
+    """バックグラウンドで実行される直近履歴同期の処理フロー"""
+    supabase = get_supabase_client()
+    print(f"BACKGROUND JOB STARTED (RECENT) for log_id: {log_id}")
+
+    try:
+        # 1. スクレイピングとパース (未実装のためプレースホルダー)
+        # parsed_tickets = _scrape_recent_history(creds)
+        parsed_tickets = [] # 仮
+        
+        print("ℹ️ Recent history scraping is currently a placeholder.")
+
+        if not parsed_tickets:
+            # チケットが0件でも正常終了とする
+            supabase.table("sync_logs").update({
+                "status": "COMPLETED",
+                "message": "同期が完了しました。直近の投票履歴は見つかりませんでした。"
+            }).eq("id", log_id).execute()
+            print(f"✅ BACKGROUND JOB COMPLETED: No tickets found for log_id: {log_id}")
+            return
+
+        # 以下、実装時はDB保存ロジックを追加
+
+    except Exception as e:
+        error_message = f"エラーが発生しました: {str(e)}"
+        print(f"❌ BACKGROUND JOB FAILED for log_id: {log_id}. Error: {error_message}")
+        try:
+            supabase.table("sync_logs").update({
+                "status": "ERROR",
+                "message": error_message
+            }).eq("id", log_id).execute()
+        except Exception as db_error:
+            print(f"  Additionally failed to update sync_logs: {db_error}")
+
 def _scrape_past_history_csv(creds: IpatAuth):
     """PlaywrightによるスクレイピングとCSVパース処理を担う (旧sync_past_history)"""
     print("🚀 Accessing JRA Vote Inquiry (PC/CSV Mode)...")
@@ -147,19 +193,41 @@ def _scrape_past_history_csv(creds: IpatAuth):
     with sync_playwright() as p:
         is_headless = os.getenv("HEADLESS", "true").lower() != "false"
         browser = p.chromium.launch(headless=is_headless)
-        context = browser.new_context(accept_downloads=True)
+        # User-Agentを設定して、一般的なブラウザからのアクセスに見せかける
+        context = browser.new_context(
+            accept_downloads=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
         context.route("**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,css}", lambda route: route.abort())
         page = context.new_page()
         page.on("dialog", lambda dialog: dialog.accept())
         
         print("👉 Logging in to PC site...")
         page.goto("https://www.nvinq.jra.go.jp/jra/")
+        
+        # デバッグ用：ログインページ保存
+        with open("debug_login_page.html", "w", encoding="utf-8") as f: f.write(page.content())
+
+        # 入力値をクリーニング（前後の空白削除）
+        s_no = creds.subscriber_number.strip()
+        pwd = creds.password.strip()
+        pars = creds.pars_number.strip()
+
         page.wait_for_selector("#UID")
-        page.locator("#UID").fill(creds.subscriber_number)
-        page.locator("#PWD").fill(creds.password)
-        page.locator("#PARS").fill(creds.pars_number)
+        page.locator("#UID").fill(s_no)
+        page.wait_for_timeout(500)
+        # ユーザー指摘により入れ替え: 暗証番号欄にP-ARS、P-ARS欄に暗証番号を入力
+        page.locator("#PWD").fill(pars)
+        page.wait_for_timeout(500)
+        page.locator("#PARS").fill(pwd)
+        page.wait_for_timeout(500)
         page.locator("input[type='submit'][value='ログイン']").click()
         page.wait_for_load_state("networkidle")
+
+        # エラーメッセージチェック
+        if page.locator("text=加入者番号・暗証番号・P-ARS番号に誤りがあります").is_visible():
+             with open("debug_login_failed.html", "w", encoding="utf-8") as f: f.write(page.content())
+             raise Exception("Login Failed: Invalid Credentials (加入者番号・暗証番号・P-ARS番号に誤りがあります)")
 
         print("👉 Navigating to Vote Inquiry (JRAWeb320)...")
         menu_btn = page.locator("tr:has-text('投票内容照会') input[type='submit']").first
