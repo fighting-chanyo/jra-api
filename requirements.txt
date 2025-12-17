@@ -3,4 +3,6 @@ uvicorn
 playwright
 python-dotenv
 pydantic
-
+beautifulsoup4
+supabase
+requests
