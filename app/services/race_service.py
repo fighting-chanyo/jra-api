@@ -20,7 +20,27 @@ class RaceService:
             races_data = self.scraper.scrape_monthly_schedule(year, month)
             print(f"DEBUG: Scraped {len(races_data)} races.")
             
+            # DBから既存データを取得して比較するための準備
+            # 月の範囲を計算
+            start_date = date(year, month, 1)
+            if month == 12:
+                end_date = date(year + 1, 1, 1) - timedelta(days=1)
+            else:
+                end_date = date(year, month + 1, 1) - timedelta(days=1)
+            
+            # 既存データを取得
+            # id, name, post_time, external_id があれば判定可能
+            existing_races_resp = self.supabase.table("races") \
+                .select("id, name, post_time, external_id") \
+                .gte("date", start_date.isoformat()) \
+                .lte("date", end_date.isoformat()) \
+                .execute()
+            
+            existing_races_map = {r['id']: r for r in existing_races_resp.data}
+            
             db_records = []
+            skipped_count = 0
+
             for r in races_data:
                 # ID生成: YYYYMMDD + PlaceCode(2) + RaceNo(2)
                 race_id = f"{r['date']}{r['place_code']}{str(r['race_number']).zfill(2)}"
@@ -37,7 +57,27 @@ class RaceService:
                     "post_time": r['post_time'].isoformat() if r['post_time'] else None,
                     "external_id": r['external_id'],
                 }
+
+                # 既存データチェック
+                if race_id in existing_races_map:
+                    existing = existing_races_map[race_id]
+                    # 必須フィールドが全て埋まっているかチェック
+                    # id, date, place_code, race_number は not null なので、
+                    # name, post_time, external_id をチェック
+                    is_complete = (
+                        existing.get('name') is not None and
+                        existing.get('post_time') is not None and
+                        existing.get('external_id') is not None
+                    )
+                    
+                    if is_complete:
+                        # 既に完全なデータがあるのでスキップ
+                        skipped_count += 1
+                        continue
+
                 db_records.append(record)
+            
+            print(f"DEBUG: Skipped {skipped_count} complete records. Upserting {len(db_records)} records.")
             
             if db_records:
                 # バッチでUpsert (50件ずつ分割して送信)
