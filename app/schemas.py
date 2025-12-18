@@ -20,14 +20,18 @@ class PayoutItem(BaseModel):
     money: int
 
 class PayoutData(BaseModel):
-    WIN: Optional[List[PayoutItem]] = None
-    PLACE: Optional[List[PayoutItem]] = None
-    BRACKET_QUINELLA: Optional[List[PayoutItem]] = None
-    QUINELLA: Optional[List[PayoutItem]] = None
-    QUINELLA_PLACE: Optional[List[PayoutItem]] = None
-    EXACTA: Optional[List[PayoutItem]] = None
-    TRIO: Optional[List[PayoutItem]] = None
+    WIN: Optional[List[PayoutItem]] = Field(None, alias="TAN")
+    PLACE: Optional[List[PayoutItem]] = Field(None, alias="FUKU")
+    BRACKET_QUINELLA: Optional[List[PayoutItem]] = Field(None, alias="WAKUREN")
+    QUINELLA: Optional[List[PayoutItem]] = Field(None, alias="UMAREN")
+    QUINELLA_PLACE: Optional[List[PayoutItem]] = Field(None, alias="WIDE")
+    EXACTA: Optional[List[PayoutItem]] = Field(None, alias="UMATAN")
+    TRIO: Optional[List[PayoutItem]] = Field(None, alias="SANRENPUKU")
     TRIFECTA: Optional[List[PayoutItem]] = None
+
+    class Config:
+        populate_by_name = True
+        allow_population_by_field_name = True
 
 class Race(BaseModel):
     id: str

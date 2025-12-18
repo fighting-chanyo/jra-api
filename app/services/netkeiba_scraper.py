@@ -255,13 +255,13 @@ class NetkeibaScraper:
             
             # 券種名とクラス名のマッピング (設計書のキーに合わせる)
             bet_type_map = {
-                "Tansho": "TAN",
-                "Fukusho": "FUKU",
-                "Wakuren": "WAKUREN", # JRA投票にないので無視しても良い
-                "Umaren": "UMAREN",
-                "Wide": "WIDE",
-                "Umatan": "UMATAN",
-                "Fuku3": "SANRENPUKU", # 3連複
+                "Tansho": "WIN",
+                "Fukusho": "PLACE",
+                "Wakuren": "BRACKET_QUINELLA", # JRA投票にないので無視しても良い
+                "Umaren": "QUINELLA",
+                "Wide": "QUINELLA_PLACE",
+                "Umatan": "EXACTA",
+                "Fuku3": "TRIO", # 3連複
                 "Tan3": "TRIFECTA"    # 3連単
             }
 
