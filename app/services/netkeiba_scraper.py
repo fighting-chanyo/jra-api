@@ -1,8 +1,10 @@
+from typing import Optional, Dict, Any, List
 import requests
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime
 from app.constants import RACE_COURSE_MAP
+import time
 
 class NetkeibaScraper:
     BASE_URL = "https://race.netkeiba.com"
@@ -18,8 +20,14 @@ class NetkeibaScraper:
         url = f"{self.BASE_URL}/top/calendar.html?year={year}&month={month}"
         print(f"DEBUG: Accessing calendar URL: {url}")
         
-        # headersを指定してリクエスト
-        resp = requests.get(url, headers=self.HEADERS)
+        try:
+            # headersを指定してリクエスト、タイムアウトを設定
+            resp = requests.get(url, headers=self.HEADERS, timeout=10)
+            resp.raise_for_status() # HTTPエラーがあれば例外を発生させる
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR: Failed to fetch calendar page for {year}-{month}: {e}")
+            return []
+        
         # resp.encoding = 'EUC-JP' # 削除
         
         print(f"DEBUG: Response Status: {resp.status_code}")
@@ -71,6 +79,8 @@ class NetkeibaScraper:
             races = self._scrape_race_list(date_str)
             print(f"DEBUG: Found {len(races)} races for {date_str}")
             all_races.extend(races)
+            # サーバーへ負荷をかけすぎないように、リクエスト間に1秒の待機時間を設ける
+            time.sleep(1)
             
         return all_races
 
@@ -82,8 +92,14 @@ class NetkeibaScraper:
         url = f"{self.BASE_URL}/top/race_list_sub.html?kaisai_date={date_str}"
         print(f"DEBUG: Accessing race list URL: {url}")
         
-        # headersを指定
-        resp = requests.get(url, headers=self.HEADERS)
+        try:
+            # headersを指定、タイムアウトを設定
+            resp = requests.get(url, headers=self.HEADERS, timeout=10)
+            resp.raise_for_status() # 4xx or 5xx エラーの場合に例外を発生させる
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR: Failed to fetch race list for {date_str}. Reason: {e}")
+            return [] # エラーが発生した場合は空のリストを返す
+        
         # resp.encoding = 'EUC-JP' # 削除
         
         # バイナリデータから明示的にデコード
@@ -98,206 +114,234 @@ class NetkeibaScraper:
             return []
         else:
             print(f"DEBUG: 'race_id=' found in response text.")
-        # ---------------------------
-
-        races = []
-        
-        # 正規表現でレース情報を一括抽出する
-        # race_list_sub.html の構造に合わせて抽出
-        
-        # race_idを含むaタグを探す
-        # <a href="../race/shutuba.html?race_id=202506050601...
-        # 注意: subページでは相対パスや構造が少し違うかもしれない
-        
-        # まずは race_id を全て抽出してみる
-        # setを使って重複排除
-        found_ids = set(re.findall(r'race_id=(\d+)', html_content))
-        
-        # 各IDについて、周辺情報を探すのは難しい（HTML全体から探す必要があるため）
-        # ここでは、BeautifulSoupを使って構造解析を試みる（subページなら構造が単純かもしれない）
+            
+        # race_id を抽出
+        # <tr class="RaceList_DataList"> ... <a href="../race/result.html?race_id=202306050911&rf=race_list">
+        # あるいは <a href="/race/shutuba.html?race_id=...">
         
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # li.RaceList_DataItem を探す
-        items = soup.find_all("li", class_="RaceList_DataItem")
-        print(f"DEBUG: Found {len(items)} 'li.RaceList_DataItem' elements")
+        # レース一覧の行を取得
+        # Netkeibaの構造は複雑だが、RaceList_DataItem などを探す
+        race_items = soup.select(".RaceList_DataItem")
+        print(f"DEBUG: Found {len(race_items)} race items")
         
-        for li in items:
-            # 場所名の特定
-            # 親要素を遡って場所名を探す
-            place_code = None
-            dl = li.find_parent("dl", class_="RaceList_DataList")
-            if dl:
-                title_tag = dl.find("p", class_="RaceList_DataTitle")
-                if title_tag:
-                    place_name_full = title_tag.text.strip()
-                    for k, v in RACE_COURSE_MAP.items():
-                        if k in place_name_full:
-                            place_code = v
-                            break
-            
-            link = li.find("a")
-            if not link:
-                continue
-            
-            href = link.get("href")
-            race_id_match = re.search(r'race_id=(\d+)', href)
-            if not race_id_match:
-                continue
-            external_id = race_id_match.group(1)
-            
-            # 場所コードが取れていない場合、IDから補完
-            if not place_code and len(external_id) == 12:
-                place_code = external_id[4:6]
-            
-            if not place_code:
-                continue
-
-            # レース番号
-            race_no_tag = li.find("div", class_="Race_Num")
-            if race_no_tag:
-                race_no_text = race_no_tag.text.strip()
-                try:
-                    race_no = int(re.search(r'\d+', race_no_text).group(0))
-                except:
-                    race_no = int(external_id[-2:])
-            else:
-                race_no = int(external_id[-2:])
-            
-            # レース名
-            race_name_tag = li.find("span", class_="ItemTitle")
-            race_name = race_name_tag.text.strip() if race_name_tag else ""
-            
-            # 発走時刻
-            time_tag = li.find("span", class_="RaceList_Itemtime")
-            post_time_str = time_tag.text.strip() if time_tag else "00:00"
-            
+        races = []
+        for item in race_items:
             try:
-                year = int(date_str[:4])
-                month = int(date_str[4:6])
-                day = int(date_str[6:8])
-                hour, minute = map(int, post_time_str.split(':'))
-                post_time = datetime(year, month, day, hour, minute)
-            except:
-                post_time = None
+                # R番号
+                r_div = item.select_one(".Race_Num")
+                if not r_div: continue
+                r_num_str = r_div.text.strip().replace('R', '')
+                race_number = int(r_num_str)
                 
-            races.append({
-                "date": date_str,
-                "place_code": place_code,
-                "race_number": race_no,
-                "name": race_name,
-                "post_time": post_time,
-                "external_id": external_id
-            })
-
+                # レース名
+                # name_div = item.select_one(".Race_Name") # 旧セレクタ
+                name_div = item.select_one(".ItemTitle") # ご提示のHTML構造に合わせて修正
+                race_name = name_div.text.strip() if name_div else "Unknown"
+                
+                # 発走時刻
+                time_div = item.select_one(".Race_Time")
+                post_time_str = time_div.text.strip() if time_div else None
+                post_time = None
+                if post_time_str:
+                    # date_str (YYYYMMDD) + HH:MM
+                    # datetime object
+                    hm = post_time_str.split(':')
+                    if len(hm) == 2:
+                        year = int(date_str[:4])
+                        month = int(date_str[4:6])
+                        day = int(date_str[6:8])
+                        post_time = datetime(year, month, day, int(hm[0]), int(hm[1]))
+                
+                # 場所コード
+                # URLから場所コードを推測するのは難しいが、race_idから取れる
+                # race_id: YYYY PP DD RR NN (PP: Place Code)
+                # Netkeiba race_id: 2023 06 05 09 11
+                # 2023: Year
+                # 06: Place (Nakayama?) -> Need mapping
+                # 05: Kai (5th meeting)
+                # 09: Day (9th day)
+                # 11: Race Num
+                
+                # リンクからrace_idを取得
+                link = item.select_one("a")
+                if not link: continue
+                href = link.get("href")
+                match = re.search(r'race_id=(\d+)', href)
+                if not match: continue
+                
+                external_id = match.group(1)
+                
+                # Netkeiba Place Code -> JRA Place Code
+                # Netkeiba: 01:Sapporo, 02:Hakodate, 03:Fukushima, 04:Niigata, 05:Tokyo, 06:Nakayama, 07:Chukyo, 08:Kyoto, 09:Hanshin, 10:Kokura
+                # JRA: Same?
+                # Let's assume same for now, or use mapping if needed.
+                # app/constants.py might have RACE_COURSE_MAP
+                
+                nk_place_code = external_id[4:6]
+                # マッピングが必要ならここで変換
+                # 今回はそのまま使う（JRAコードと一致していることが多い）
+                place_code = nk_place_code 
+                
+                races.append({
+                    "date": date_str,
+                    "place_code": place_code,
+                    "race_number": race_number,
+                    "name": race_name,
+                    "post_time": post_time,
+                    "external_id": external_id
+                })
+            except Exception as e:
+                print(f"Error parsing race item: {e}")
+                continue
+                
         return races
 
-    def scrape_race_result(self, external_id: str):
+    def scrape_race_result(self, external_id: str) -> Optional[Dict[str, Any]]:
         """
         レース結果と払戻金を取得する
         """
         url = f"{self.BASE_URL}/race/result.html?race_id={external_id}"
-        # headersを指定
-        resp = requests.get(url, headers=self.HEADERS)
-        # resp.encoding = 'EUC-JP' # 削除
+        print(f"DEBUG: Accessing result URL: {url}")
         
-        html_content = resp.content.decode('euc-jp', errors='replace')
-        soup = BeautifulSoup(html_content, 'html.parser')
+        try:
+            resp = requests.get(url, headers=self.HEADERS, timeout=10)
+            resp.raise_for_status() # 4xx or 5xx エラーの場合に例外を発生させる
+            
+            # エンコーディング処理の改善
+            # まずUTF-8を試行し、失敗したらEUC-JP (Netkeibaは混在しているため)
+            try:
+                html_content = resp.content.decode('utf-8')
+            except UnicodeDecodeError:
+                html_content = resp.content.decode('euc-jp', errors='replace')
 
-        # 確定チェック (1着の馬番があるか)
-        # table.RaceTable01 tr (1行目はヘッダー)
-        result_rows = soup.select("table.RaceTable01 tr.HorseList")
-        if not result_rows:
-            return None # まだ結果がない
-        
-        # 1着, 2着, 3着の馬番を取得
-        # 着順は tr の中の td:nth-child(1) だが、確定後は着順が入る
-        # Netkeibaは着順通りに並んでいるはず
-        
-        results = []
-        for row in result_rows[:3]: # 上位3頭
-            # 馬番は td:nth-child(3) (枠, 馬番, ...)
-            # 構造が変わる可能性があるのでclassで探したいが、Netkeibaはclassが少ない
-            # 通常: 着順, 枠, 馬番, 馬名...
-            tds = row.find_all("td")
-            if len(tds) < 3:
-                continue
+            soup = BeautifulSoup(html_content, 'html.parser')
+
+            # --- 1. 着順の取得 ---
+            result_table = soup.find("table", class_="RaceTable01")
+            if not result_table:
+                print(f"   -> Result table not found for {external_id}.")
+                return None
+
+            rows = result_table.find_all("tr", class_=re.compile("HorseList"))
+            if len(rows) < 3:
+                print(f"   -> Not enough result rows found for {external_id}.")
+                return None
             
             try:
-                horse_no = int(tds[2].text.strip())
-                results.append(horse_no)
-            except ValueError:
-                continue
-        
-        if len(results) < 3:
-            # 3着まで確定していない、あるいは同着などで複雑な場合
-            # とりあえず3頭取れなければスキップ扱いにしてもよいが、
-            # 運用上は確定していれば取れるはず
-            pass
+                result_1st = rows[0].select_one("td.Result_Num + td + td div").text.strip()
+                result_2nd = rows[1].select_one("td.Result_Num + td + td div").text.strip()
+                result_3rd = rows[2].select_one("td.Result_Num + td + td div").text.strip()
+            except (AttributeError, IndexError):
+                print(f"   -> Could not parse 1st-3rd place horse numbers for {external_id}")
+                return None
+            
+            # --- 2. 払戻金の取得 ---
+            payout_data = {}
+            payout_box = soup.find("div", class_="Result_Pay_Back")
+            if not payout_box:
+                print(f"   -> Payout box not found for {external_id}.")
+                # 着順だけでも返す
+                return {
+                    "result_1st": result_1st,
+                    "result_2nd": result_2nd,
+                    "result_3rd": result_3rd,
+                    "payout_data": {} # 空のデータを返す
+                }
 
-        # 払戻金の取得
-        # table.PayBackTable
-        payout_data = {}
-        
-        # Netkeibaの払戻テーブルは2つある場合がある（単勝〜馬連、ワイド〜3連単）
-        # class="PayBackTable" を全て取得
-        payback_tables = soup.select("table.PayBackTable")
-        
-        for table in payback_tables:
-            rows = table.find_all("tr")
-            for row in rows:
-                th = row.find("th")
-                if not th: continue
-                type_name = th.text.strip() # 単勝, 複勝, etc.
-                
-                # 該当するキーを探す
-                key = None
-                if "単勝" in type_name: key = "WIN"
-                elif "複勝" in type_name: key = "PLACE"
-                elif "枠連" in type_name: key = "BRACKET_QUINELLA"
-                elif "馬連" in type_name: key = "QUINELLA"
-                elif "ワイド" in type_name: key = "QUINELLA_PLACE"
-                elif "馬単" in type_name: key = "EXACTA"
-                elif "3連複" in type_name or "３連複" in type_name: key = "TRIO"
-                elif "3連単" in type_name or "３連単" in type_name: key = "TRIFECTA"
-                
-                if not key: continue
-                
-                # 組み合わせと配当
-                # td.Result (組み合わせ), td.Payout (配当)
-                # 複勝やワイドは複数行ある場合があるが、Netkeibaは1つのtdの中にbrで区切られていることが多い
-                # あるいは tr が分かれていることは少ない（Netkeibaは1つのセルに押し込むスタイル）
-                
-                result_td = row.find("td", class_="Result")
-                payout_td = row.find("td", class_="Payout")
-                
-                if not result_td or not payout_td: continue
-                
-                # brで分割
-                # get_text(separator='|') を使う
-                results_text = result_td.get_text(separator='|').split('|')
-                payouts_text = payout_td.get_text(separator='|').split('|')
-                
-                items = []
-                for r_txt, p_txt in zip(results_text, payouts_text):
-                    # r_txt: "10" or "10 - 11" or "10 - 11 - 12"
-                    # p_txt: "1,200" -> 1200
+            # 各払い戻しテーブルを処理
+            payout_tables = payout_box.find_all("table")
+            
+            # 券種名とクラス名のマッピング (設計書のキーに合わせる)
+            bet_type_map = {
+                "Tansho": "TAN",
+                "Fukusho": "FUKU",
+                "Wakuren": "WAKUREN", # JRA投票にないので無視しても良い
+                "Umaren": "UMAREN",
+                "Wide": "WIDE",
+                "Umatan": "UMATAN",
+                "Fuku3": "SANRENPUKU", # 3連複
+                "Tan3": "TRIFECTA"    # 3連単
+            }
+
+            for table in payout_tables:
+                for tr in table.find_all("tr"):
+                    # th から券種名を取得
+                    th = tr.find("th")
+                    if not th: continue
                     
-                    try:
-                        money = int(p_txt.replace(',', '').replace('円', ''))
-                        # 馬番の抽出
-                        # - で区切られている、あるいは枠連などはそのまま
-                        # 正規表現で数字を抽出
-                        horses = [int(x) for x in re.findall(r'\d+', r_txt)]
-                        items.append({"horse": horses, "money": money})
-                    except ValueError:
-                        continue
-                
-                payout_data[key] = items
+                    # class名から券種キーを取得
+                    tr_class = tr.get("class", [""])[0]
+                    bet_type_key = bet_type_map.get(tr_class)
 
-        return {
-            "result_1st": str(results[0]) if len(results) > 0 else None,
-            "result_2nd": str(results[1]) if len(results) > 1 else None,
-            "result_3rd": str(results[2]) if len(results) > 2 else None,
-            "payout_data": payout_data
-        }
+                    if not bet_type_key:
+                        continue
+                    
+                    result_td = tr.find("td", class_="Result")
+                    payout_td = tr.find("td", class_="Payout")
+
+                    if not result_td or not payout_td:
+                        continue
+
+                    # 払い戻し金額の取得 (先に取得)
+                    # "520円" や "160円<br>190円" のようになっている
+                    payout_texts = [p.strip() for p in payout_td.decode_contents().split('<br>')]
+                    payout_monies = [int(re.sub(r'\D', '', p)) for p in payout_texts if re.search(r'\d', p)]
+
+                    # 馬番リストの取得
+                    horse_groups = []
+                    # <span> や <li> から馬番を抽出するヘルパー
+                    def get_numbers_from_tags(tags):
+                        nums = []
+                        for tag in tags:
+                            num_text = tag.text.strip()
+                            if num_text.isdigit():
+                                nums.append(int(num_text))
+                        return nums
+
+                    if result_td.find("ul"): # 馬連、ワイド、3連系など
+                        groups = result_td.find_all("ul")
+                        for group in groups:
+                            numbers = get_numbers_from_tags(group.find_all("li"))
+                            if numbers:
+                                horse_groups.append(numbers)
+                    else: # 単勝、複勝
+                        numbers = get_numbers_from_tags(result_td.find_all("div"))
+                        # 単勝・複勝は各馬番が1つの結果に対応する
+                        for num in numbers:
+                            horse_groups.append([num])
+
+                    # データ整形
+                    payout_list = []
+                    # 同着などで horse_groups と payout_monies の数が一致することを確認
+                    if len(horse_groups) == len(payout_monies):
+                        for i, horses in enumerate(horse_groups):
+                            try:
+                                payout_list.append({
+                                    "horse": horses,
+                                    "money": payout_monies[i]
+                                })
+                            except (ValueError, IndexError):
+                                print(f"  WARN: Could not parse payout entry for {bet_type_key}")
+                                continue
+                    
+                    if payout_list:
+                        payout_data[bet_type_key] = payout_list
+
+
+            return {
+                "result_1st": result_1st,
+                "result_2nd": result_2nd,
+                "result_3rd": result_3rd,
+                "payout_data": payout_data,
+            }
+
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR scraping result for {external_id} (Request failed): {e}")
+            return None
+        except Exception as e:
+            print(f"ERROR scraping result for {external_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None

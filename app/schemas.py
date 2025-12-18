@@ -54,7 +54,7 @@ class Ticket(BaseModel):
     total_points: int
     total_cost: int
     status: str = "PENDING"
-    payout: int = 0
+    payout: Optional[int] = None
     source: str = "IPAT_SYNC"
     created_at: Optional[datetime] = None
     mode: str = "REAL"

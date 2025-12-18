@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 import time
 from app.services.netkeiba_scraper import NetkeibaScraper
@@ -100,47 +100,57 @@ class RaceService:
             traceback.print_exc()
             return 0
 
-    def update_results_for_today(self):
+    def update_results(self, target_date: date = None):
         """
-        当日のレース結果を更新し、的中判定を行う
+        指定日のレース結果を更新し、的中判定を行う
+        target_date: 指定がない場合は当日(date.today())
         """
-        today = date.today()
-        # テスト用に日付を固定したい場合はここで調整
-        # today = date(2023, 12, 17) 
+        target_date = target_date or date.today()
         
-        print(f"🏁 Updating results for {today}...")
+        print(f"🏁 Updating results for {target_date}...")
         
-        # 1. DBから当日のレースを取得 (status != 'FINISHED' かつ post_time が過去)
-        # post_time <= now - 10min
-        check_time = datetime.now() - timedelta(minutes=10)
+        # 1. DBから当日のレースを取得 (status != 'FINISHED')
+        # post_time のフィルタリングはPython側で行う
         
         # Supabaseクエリ
-        # date = today AND status != 'FINISHED'
-        # post_time filter is harder in Supabase simple client if not using raw sql or range
-        # とりあえず当日全件取得してフィルタリング
-        res = self.supabase.table("races").select("*").eq("date", today.isoformat()).neq("status", "FINISHED").execute()
+        res = self.supabase.table("races").select("*").eq("date", target_date.isoformat()).neq("status", "FINISHED").execute()
         races = res.data
         
         if not races:
-            print("   No pending races found for today.")
+            print(f"   No pending races found for {target_date}.")
             return {"processed": 0, "hits": 0}
 
         processed_count = 0
         total_hits = 0
+        
+        # 現在時刻をUTCで取得
+        now_utc = datetime.now(timezone.utc)
 
         for race in races:
             # 発走時刻チェック
             if race.get("post_time"):
-                post_time = datetime.fromisoformat(race["post_time"])
-                # タイムゾーン情報がない場合はnaive比較になるので注意
-                # DBがtimestamptzならUTCで返ってくることが多い
-                # ここでは簡易的に比較（エラーが出たら修正）
-                if post_time.tzinfo:
-                    if post_time > datetime.now(post_time.tzinfo):
-                        continue # まだ発走していない
-                else:
-                    if post_time > datetime.now():
+                try:
+                    # ISOフォーマット文字列をパース
+                    post_time = datetime.fromisoformat(race["post_time"])
+                    
+                    # タイムゾーン情報の有無を確認してUTCに統一
+                    if post_time.tzinfo is None:
+                        # タイムゾーン情報がない場合、DBがUTCで保存していると仮定してUTCを付与
+                        # もしJSTで保存されているなら timezone(timedelta(hours=9)) を付与
+                        # Supabaseのtimestamptzは通常UTCで返る
+                        post_time = post_time.replace(tzinfo=timezone.utc)
+                    else:
+                        # タイムゾーン情報がある場合はUTCに変換
+                        post_time = post_time.astimezone(timezone.utc)
+                    
+                    # 現在時刻と比較 (発走時刻 > 現在時刻 ならスキップ)
+                    if post_time > now_utc:
+                        print(f"   Skipping Race {race['id']}: Post time {post_time} is in the future (Now: {now_utc})")
                         continue
+                        
+                except ValueError as e:
+                    print(f"   ⚠️ Error parsing post_time for Race {race['id']}: {e}")
+                    continue
 
             external_id = race.get("external_id")
             if not external_id:
@@ -154,6 +164,8 @@ class RaceService:
                 print("      -> Not finalized yet.")
                 continue
 
+            print(f"DEBUG: Scraped result data for {race['id']}: {result_data}")
+
             # 3. DB更新 (Races)
             update_payload = {
                 "result_1st": result_data["result_1st"],
@@ -162,7 +174,14 @@ class RaceService:
                 "payout_data": result_data["payout_data"],
                 "status": "FINISHED"
             }
-            self.supabase.table("races").update(update_payload).eq("id", race["id"]).execute()
+            print(f"DEBUG: Updating race {race['id']} with payload: {update_payload}")
+            
+            try:
+                self.supabase.table("races").update(update_payload).eq("id", race["id"]).execute()
+                print(f"DEBUG: Successfully updated race {race['id']}")
+            except Exception as e:
+                print(f"ERROR updating race {race['id']}: {e}")
+
             processed_count += 1
 
             # 4. 的中判定
@@ -200,15 +219,18 @@ class RaceService:
             # Ticketモデルに変換
             ticket = Ticket(**t_dict)
             
-            status, payout = JudgmentLogic.judge_ticket(ticket, r1, r2, r3, payout_data_obj)
+            judged_status, payout = JudgmentLogic.judge_ticket(ticket, r1, r2, r3, payout_data_obj)
             
-            if status == "HIT":
+            # フロントエンドの仕様に合わせて "HIT" を "WIN" に変更
+            status_to_update = "WIN" if judged_status == "HIT" else judged_status
+            
+            if status_to_update == "WIN":
                 hit_count += 1
-                print(f"         🎉 HIT! Ticket {ticket.id}: {payout} yen")
+                print(f"         🎉 WIN! Ticket {ticket.id}: {payout} yen")
             
             # チケット更新
             self.supabase.table("tickets").update({
-                "status": status,
+                "status": status_to_update,
                 "payout": payout
             }).eq("id", ticket.id).execute()
             

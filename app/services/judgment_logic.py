@@ -7,7 +7,7 @@ class JudgmentLogic:
     def judge_ticket(ticket: Ticket, result_1st: int, result_2nd: int, result_3rd: int, payout_data: PayoutData) -> Tuple[str, int]:
         """
         チケットの的中判定を行い、(status, payout) を返す
-        status: HIT or MISS
+        status: HIT or LOSE
         payout: 払戻金合計
         """
         bet_type = ticket.bet_type
@@ -16,12 +16,12 @@ class JudgmentLogic:
         
         # 払戻データがない場合は判定不能（あるいはハズレ扱いだが、通常はデータがある前提）
         if not payout_data:
-            return "MISS", 0
+            return "LOSE", 0
 
         # 式別に対応する払戻リストを取得
         payout_items: List[PayoutItem] = getattr(payout_data, bet_type, [])
         if not payout_items:
-            return "MISS", 0
+            return "LOSE", 0
 
         # ユーザーの買い目を展開して、整数のタプル/リストの集合にする
         # 各要素は [horse1, horse2, ...]
@@ -48,7 +48,7 @@ class JudgmentLogic:
         if hit_count > 0:
             return "HIT", total_payout
         else:
-            return "MISS", 0
+            return "LOSE", 0
 
     @staticmethod
     def _expand_combinations(bet_type: str, method: str, content: Dict[str, Any]) -> List[List[int]]:
@@ -158,7 +158,9 @@ class JudgmentLogic:
             # 複勝の的中組み合わせは「3番」のように1頭。
             target = winning_horses
             for comb in user_combinations:
-                if target in comb:
+                # 単勝・複勝は馬番が一致すればOK
+                # comb は [1] のようなリスト
+                if target == comb:
                     return True
             return False
 
