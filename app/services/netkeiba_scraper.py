@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any, List
 import requests
 from bs4 import BeautifulSoup
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from app.constants import RACE_COURSE_MAP
 import time
 
@@ -141,7 +141,7 @@ class NetkeibaScraper:
                 race_name = name_div.text.strip() if name_div else "Unknown"
                 
                 # 発走時刻
-                time_div = item.select_one(".Race_Time")
+                time_div = item.select_one(".RaceList_Itemtime")
                 post_time_str = time_div.text.strip() if time_div else None
                 post_time = None
                 if post_time_str:
@@ -152,7 +152,8 @@ class NetkeibaScraper:
                         year = int(date_str[:4])
                         month = int(date_str[4:6])
                         day = int(date_str[6:8])
-                        post_time = datetime(year, month, day, int(hm[0]), int(hm[1]))
+                        # JSTのタイムゾーン情報を付与
+                        post_time = datetime(year, month, day, int(hm[0]), int(hm[1]), tzinfo=timezone(timedelta(hours=9)))
                 
                 # 場所コード
                 # URLから場所コードを推測するのは難しいが、race_idから取れる
