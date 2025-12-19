@@ -25,7 +25,17 @@ class JudgmentLogic:
 
         # ユーザーの買い目を展開して、整数のタプル/リストの集合にする
         # 各要素は [horse1, horse2, ...]
-        user_combinations = JudgmentLogic._expand_combinations(bet_type, method, content)
+        # ただし、着順指定ありの流し（マルチなし）の場合は展開せずに判定する
+        is_ordered_nagashi = (
+            method == "NAGASHI" and 
+            not content.get("multi", False) and 
+            bet_type in ["TRIFECTA", "EXACTA", "TAN"] and
+            bool(content.get("positions"))
+        )
+
+        user_combinations = []
+        if not is_ordered_nagashi:
+            user_combinations = JudgmentLogic._expand_combinations(bet_type, method, content)
         
         total_payout = 0
         hit_count = 0
@@ -35,8 +45,14 @@ class JudgmentLogic:
             winning_horses = item.horse # List[int]
             money = item.money
             
+            is_hit = False
+            if is_ordered_nagashi:
+                is_hit = JudgmentLogic._is_hit_nagashi_ordered(content, winning_horses)
+            else:
+                is_hit = JudgmentLogic._is_hit(bet_type, winning_horses, user_combinations)
+
             # 正解がユーザーの買い目に含まれるか
-            if JudgmentLogic._is_hit(bet_type, winning_horses, user_combinations):
+            if is_hit:
                 # 的中
                 # 1点あたりの金額 * (配当 / 100)
                 # amount_per_point は100円単位とは限らない（例: 100円）
@@ -49,6 +65,41 @@ class JudgmentLogic:
             return "HIT", total_payout
         else:
             return "LOSE", 0
+
+    @staticmethod
+    def _is_hit_nagashi_ordered(content: Dict[str, Any], winning_horses: List[int]) -> bool:
+        """
+        着順指定あり・マルチなしの流し投票の的中判定
+        Step A: 軸の判定
+        Step B: 相手の判定
+        """
+        axis = [int(x) for x in content.get("axis", [])]
+        partners = [int(x) for x in content.get("partners", [])]
+        positions = content.get("positions", [])
+        
+        if not positions or len(axis) != len(positions):
+            return False
+
+        # Step A: 軸の判定
+        for horse_num, pos in zip(axis, positions):
+            # pos は 1-based index
+            idx = pos - 1
+            if idx < 0 or idx >= len(winning_horses):
+                return False
+            
+            if winning_horses[idx] != horse_num:
+                return False
+
+        # Step B: 相手の判定
+        axis_indices = {p - 1 for p in positions}
+        remaining_indices = [i for i in range(len(winning_horses)) if i not in axis_indices]
+        remaining_results = [winning_horses[i] for i in remaining_indices]
+        
+        for res_horse in remaining_results:
+            if res_horse not in partners:
+                return False
+
+        return True
 
     @staticmethod
     def _expand_combinations(bet_type: str, method: str, content: Dict[str, Any]) -> List[List[int]]:

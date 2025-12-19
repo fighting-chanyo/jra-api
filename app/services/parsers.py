@@ -69,7 +69,7 @@ def parse_jra_csv(csv_path):
                         bet_type_code = en
                         break
                 
-                method, multi, axis, partners, selections = "NORMAL", False, [], [], []
+                method, multi, axis, partners, selections, positions = "NORMAL", False, [], [], [], []
 
                 if "ＢＯＸ" in shikibetsu_str or "ボックス" in shikibetsu_str:
                     method = "BOX"
@@ -105,7 +105,8 @@ def parse_jra_csv(csv_path):
                             "multi": multi,
                             "axis": axis,
                             "partners": partners,
-                            "selections": selections
+                            "selections": selections,
+                            "positions": positions
                         },
                         "amount_per_point": amount_per_point,
                         "total_cost": total_cost,
@@ -173,7 +174,8 @@ def parse_past_detail_html(html_content):
             "multi": is_multi,
             "axis": [],
             "partners": [],
-            "selections": []
+            "selections": [],
+            "positions": []
         }
         
         if umaban_info:
@@ -182,16 +184,35 @@ def parse_past_detail_html(html_content):
             if buy_type_method == "NAGASHI":
                 axis_list = []
                 partners_list = []
+                positions_list = []
+
                 for block in blocks:
-                    prefix = block.select_one('.prefix')
+                    prefix_elem = block.select_one('.prefix')
+                    prefix_text = prefix_elem.get_text(strip=True) if prefix_elem else ""
                     nums = [p.get_text(strip=True) for p in block.select('.umabanBlock p')]
-                    if prefix and "軸" in prefix.get_text():
+                    
+                    if "軸" in prefix_text:
                         axis_list.extend(nums)
+                        
+                        # 着順指定の解析 (マルチの場合は無視)
+                        if not is_multi:
+                            pos_val = None
+                            if "1着" in prefix_text:
+                                pos_val = 1
+                            elif "2着" in prefix_text:
+                                pos_val = 2
+                            elif "3着" in prefix_text:
+                                pos_val = 3
+                            
+                            if pos_val is not None:
+                                # 軸馬の数だけ着順を追加
+                                positions_list.extend([pos_val] * len(nums))
                     else:
                         partners_list.extend(nums)
                 
                 content_json["axis"] = axis_list
                 content_json["partners"] = partners_list
+                content_json["positions"] = positions_list
 
             elif buy_type_method == "BOX":
                 # ボックスで選択した馬番をselectionsに二次元配列として格納
