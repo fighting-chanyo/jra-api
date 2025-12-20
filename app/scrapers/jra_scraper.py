@@ -218,13 +218,15 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
 
                                 # Parse position from prefix for Fixed Nagashi
                                 if not multi:
-                                    pos = 0
-                                    if "1着" in p_text: pos = 1
-                                    elif "2着" in p_text: pos = 2
-                                    elif "3着" in p_text: pos = 3
-                                    
-                                    if pos > 0:
-                                        positions.extend([pos] * len(nums))
+                                    # Regex to find 1-3 (half or full width) followed by 着 or 頭目
+                                    pos_match = re.search(r"([123１２３])(?:着|頭目)", p_text)
+                                    if pos_match:
+                                        pos_val = pos_match.group(1)
+                                        # Convert full-width to half-width
+                                        pos_map = {"1": 1, "2": 2, "3": 3, "１": 1, "２": 2, "３": 3}
+                                        pos = pos_map.get(pos_val, 0)
+                                        if pos > 0:
+                                            positions.extend([pos] * len(nums))
                 elif method == "FORMATION":
                     # Formation usually lists selections for each position
                     for flex in flex_rows:
@@ -264,38 +266,41 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
                  if nums:
                     selections.append(nums)
 
-        # Extract Amount
+        # Extract Amount per point
         money_td = row.select_one("td.money")
-        # Look for div.ng-binding inside td.money
-        money_div = money_td.select_one("div.ng-binding")
-        if money_div:
-            amount_text = money_div.get_text(strip=True)
-        else:
-            amount_text = money_td.get_text(strip=True)
-            
-        amount_text = amount_text.replace("円", "").replace(",", "")
-        try:
-            amount = int(amount_text)
-        except:
-            amount = 0
-            
+        amount_per_point = 0
+        if money_td:
+            # The first div.ng-binding contains the "per point" amount (e.g., "200円")
+            money_div = money_td.select_one("div.ng-binding")
+            if money_div:
+                amount_text = money_div.get_text(strip=True).replace("円", "").replace(",", "")
+                try:
+                    amount_per_point = int(amount_text)
+                except:
+                    amount_per_point = 0
+        
+        if amount_per_point == 0:
+            amount_per_point = 100 # Default fallback
+
         # Sets (points)
         sets_td = row.select_one("td.sets")
-        amount_per_point = 0
+        total_points = 0
         if sets_td:
             sets_text = sets_td.get_text(strip=True).replace("組", "").replace(",", "")
             try:
-                sets_count = int(sets_text)
-                if sets_count > 0:
-                    amount_per_point = amount // sets_count
+                total_points = int(sets_text)
             except:
-                pass
+                total_points = 0
         
-        if amount_per_point == 0:
-            amount_per_point = 100 # Default assumption
+        # If points couldn't be parsed, assume at least 1
+        if total_points == 0:
+            total_points = 1
+
+        # Calculate total_cost strictly as (amount_per_point * total_points)
+        calculated_total_cost = amount_per_point * total_points
 
         payout = 0
-        status = "PURCHASED"
+        status = "PENDING"
         
         ticket = {
             "raw": {
@@ -318,9 +323,12 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
                     "positions": positions
                 },
                 "amount_per_point": amount_per_point,
-                "total_cost": amount,
+                "total_points": total_points,
+                "total_cost": calculated_total_cost,
                 "payout": payout,
-                "status": status
+                "status": status,
+                "source": "IPAT_RECENT",
+                "mode": "REAL"
             }
         }
         
@@ -425,34 +433,53 @@ def scrape_recent_history(creds: IpatAuth):
                 print(f"   Processing Receipt: {receipt_no}")
                 
                 # Click to open details
-                row.locator("td.receipt a").click()
-                
-                # Wait for detail view
                 try:
-                    page.wait_for_selector("h1:has-text('投票履歴結果内容')", timeout=5000)
-                except:
-                    print("   ⚠️ Failed to load detail view. Skipping.")
+                    target_link = row.locator("td.receipt a")
+                    target_link.scroll_into_view_if_needed()
+                    target_link.click()
+                except Exception as e:
+                    print(f"   ⚠️ Failed to click receipt {receipt_no}: {e}")
                     continue
+
+                # Wait for detail view
+                is_detail_loaded = False
+                try:
+                    # Wait for either the header or a known element in the detail view
+                    page.wait_for_selector("h1:has-text('投票履歴結果内容'), table.table-result", timeout=10000)
+                    is_detail_loaded = True
+                except:
+                    print(f"   ⚠️ Failed to load detail view for {receipt_no}. Attempting to recover...")
                 
-                # Parse Detail HTML
-                content = page.content()
-                parsed = _parse_recent_detail_html(content, receipt_no, date_str)
-                all_parsed_data.extend(parsed)
-                print(f"   ✅ Extracted {len(parsed)} tickets.")
+                if is_detail_loaded:
+                    # Parse Detail HTML
+                    content = page.content()
+                    try:
+                        parsed = _parse_recent_detail_html(content, receipt_no, date_str)
+                        all_parsed_data.extend(parsed)
+                        print(f"   ✅ Extracted {len(parsed)} tickets.")
+                    except Exception as e:
+                        print(f"   ❌ Error parsing detail for {receipt_no}: {e}")
                 
-                # Go back to list
-                # Try "一覧に戻る" button
-                back_btn = page.locator("button:has-text('一覧に戻る')")
-                if back_btn.is_visible():
-                    back_btn.click()
-                else:
-                    # Fallback: Close detail modal if it's a modal
-                    close_btn = page.locator("button:has-text('閉じる')").last
-                    if close_btn.is_visible():
-                        close_btn.click()
-                
-                # Wait for list to reappear
-                page.wait_for_selector("h1:has-text('投票履歴一覧')")
+                # Go back to list (Always try to go back if we might have moved)
+                try:
+                    # Try "一覧に戻る" button
+                    back_btn = page.locator("button:has-text('一覧に戻る')")
+                    if back_btn.is_visible():
+                        back_btn.click()
+                    else:
+                        # Fallback: Close detail modal if it's a modal
+                        close_btn = page.locator("button:has-text('閉じる')").last
+                        if close_btn.is_visible():
+                            close_btn.click()
+                    
+                    # Wait for list to reappear
+                    page.wait_for_selector("h1:has-text('投票履歴一覧')", timeout=5000)
+                except:
+                    # If we can't find the back button or list header, we might already be on the list or stuck
+                    if "投票履歴一覧" not in page.content():
+                        print(f"   ⚠️ Could not confirm return to list for {receipt_no}. Reloading page...")
+                        page.reload()
+                        page.wait_for_selector("h1:has-text('投票履歴一覧')")
                 
         browser.close()
         

@@ -21,10 +21,13 @@ def _map_ticket_to_db_format(ticket_data, user_id):
     unique_str = f"{raw['race_date_str']}-{raw['receipt_no']}-{raw['line_no']}-{content_str}"
     receipt_unique_id = hashlib.md5(unique_str.encode()).hexdigest()
 
-    # total_points の計算 (0除算を回避)
-    total_points = 0
-    if parsed["amount_per_point"] > 0:
+    # total_points の取得または計算
+    total_points = parsed.get("total_points", 0)
+    if total_points == 0 and parsed["amount_per_point"] > 0:
         total_points = parsed["total_cost"] // parsed["amount_per_point"]
+
+    source = parsed.get("source", "IPAT_SYNC")
+    mode = parsed.get("mode", "REAL")
 
     # DBのレコードを構成
     return {
@@ -38,7 +41,8 @@ def _map_ticket_to_db_format(ticket_data, user_id):
         "total_cost": parsed["total_cost"],
         "payout": parsed["payout"],
         "status": parsed["status"],
-        "source": "IPAT_SYNC",
+        "source": source,
+        "mode": mode,
         "receipt_unique_id": receipt_unique_id
     }
 
@@ -157,29 +161,74 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
         # 1. スクレイピングとパース
         parsed_tickets = scrape_recent_history(creds)
         
-        print("ℹ️ Recent history scraping is currently a placeholder (Step 1 implemented).")
+        # 2. DB形式への変換
+        db_records = [_map_ticket_to_db_format(t, user_id) for t in parsed_tickets]
 
-        if not parsed_tickets:
+        if not db_records:
             # チケットが0件でも正常終了とする
-            supabase.table("sync_logs").update({
+            update_payload = {
                 "status": "COMPLETED",
                 "message": "同期が完了しました。直近の投票履歴は見つかりませんでした。"
-            }).eq("id", log_id).execute()
+            }
+            supabase.table("sync_logs").update(update_payload).eq("id", log_id).execute()
             print(f"✅ BACKGROUND JOB COMPLETED: No tickets found for log_id: {log_id}")
             return
 
-        # 以下、実装時はDB保存ロジックを追加
+        # 3. DBへ保存 (Upsert)
+        print(f"   Upserting {len(db_records)} records to 'tickets' table...")
+        supabase.table("tickets").upsert(db_records, on_conflict="receipt_unique_id").execute()
+
+        # --- 成功時のログ更新 ---
+        update_payload = {
+            "status": "COMPLETED",
+            "message": f"同期が完了しました。{len(db_records)} 件の投票履歴を保存しました。"
+        }
+        res = supabase.table("sync_logs").update(update_payload).eq("id", log_id).execute()
+        
+        # 成功確認のログ出力
+        update_data = getattr(res, "data", None) if hasattr(res, "data") else res.get("data") if isinstance(res, dict) else None
+        if not update_data:
+            print(f"⚠️ sync_logs row not found for update (log_id: {log_id}).")
+        
+        print(f"✅ BACKGROUND JOB COMPLETED for log_id: {log_id}")
 
     except Exception as e:
-        error_message = f"エラーが発生しました: {str(e)}"
+        # エラーメッセージの翻訳
+        error_str = str(e)
+        user_friendly_error = error_str
+        
+        if "Login Failed: Invalid Credentials" in error_str:
+            user_friendly_error = "ログインに失敗しました。加入者番号、暗証番号、P-ARS番号を確認してください。"
+        elif "Session timed out" in error_str:
+            user_friendly_error = "セッションがタイムアウトしました。もう一度お試しください。"
+        elif "Login Failed or Menu Changed" in error_str:
+            user_friendly_error = "ログイン後の画面遷移に失敗しました。メンテナンス中の可能性があります。"
+        
+        error_message = f"エラーが発生しました: {user_friendly_error}"
         print(f"❌ BACKGROUND JOB FAILED for log_id: {log_id}. Error: {error_message}")
+        
         try:
-            supabase.table("sync_logs").update({
+            res = supabase.table("sync_logs").update({
                 "status": "ERROR",
                 "message": error_message
             }).eq("id", log_id).execute()
+            
+            err = getattr(res, "error", None) if hasattr(res, "error") else res.get("error") if isinstance(res, dict) else None
+            data = getattr(res, "data", None) if hasattr(res, "data") else res.get("data") if isinstance(res, dict) else None
+            
+            if err or not data:
+                # fallback insert
+                supabase.table("sync_logs").insert({
+                    "id": log_id,
+                    "status": "ERROR",
+                    "message": error_message
+                }).execute()
         except Exception as db_error:
             print(f"  Additionally failed to update sync_logs: {db_error}")
+            fname = f"failed_sync_log_{log_id}.log"
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(f"Failed to update sync_logs for log_id={log_id}\nError: {db_error}\nOriginal error: {error_message}\n")
+            print(f"❌ Wrote debug log to {fname}")
 
 
 

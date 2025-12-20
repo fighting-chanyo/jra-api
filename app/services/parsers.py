@@ -47,6 +47,11 @@ def parse_jra_csv(csv_path):
                     amount_per_point = int(amount_str)
                     total_cost = int(amount_str)
 
+                # 購入点数
+                total_points = 0
+                if amount_per_point > 0:
+                    total_points = total_cost // amount_per_point
+
                 # 払戻金
                 payout_str = row[col_map["払戻金額"]].replace(',', '')
                 payout = int(payout_str) if payout_str.isdigit() else 0
@@ -73,17 +78,17 @@ def parse_jra_csv(csv_path):
 
                 if "ＢＯＸ" in shikibetsu_str or "ボックス" in shikibetsu_str:
                     method = "BOX"
-                    selections = [kumiban_str.split('；')]
+                    selections = [[x.strip() for x in kumiban_str.split('；') if x.strip()]]
                 elif "フォーメーション" in shikibetsu_str:
                     method = "FORMATION"
-                    selections = [part.split('；') for part in kumiban_str.split('／')]
+                    selections = [[x.strip() for x in part.split('；') if x.strip()] for part in kumiban_str.split('／')]
                 elif "ながし" in shikibetsu_str:
                     method = "NAGASHI"
                     if "マルチ" in shikibetsu_str: multi = True
                     parts = kumiban_str.split('／')
                     if len(parts) >= 2:
-                        axis = parts[0].split('；')
-                        partners = parts[1].split('；')
+                        axis = [x.strip() for x in parts[0].split('；') if x.strip()]
+                        partners = [x.strip() for x in parts[1].split('；') if x.strip()]
                 else:
                     selections = [re.findall(r'\d+', kumiban_str)]
 
@@ -109,9 +114,12 @@ def parse_jra_csv(csv_path):
                             "positions": positions
                         },
                         "amount_per_point": amount_per_point,
+                        "total_points": total_points,
                         "total_cost": total_cost,
                         "payout": payout,
                         "status": status,
+                        "source": "IPAT_CSV",
+                        "mode": "REAL"
                     }
                 }
                 results.append(ticket_data)

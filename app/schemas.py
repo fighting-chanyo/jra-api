@@ -47,19 +47,28 @@ class Race(BaseModel):
     post_time: Optional[datetime] = None
     external_id: Optional[str] = None
 
+class BetContent(BaseModel):
+    type: str
+    method: str
+    multi: bool
+    selections: List[List[str]]
+    axis: List[str]
+    partners: List[str]
+    positions: List[int]
+
 class Ticket(BaseModel):
     id: Optional[str] = None
     user_id: str
     race_id: str
     bet_type: str
     buy_type: str
-    content: Dict[str, Any]
+    content: BetContent
     amount_per_point: int
     total_points: int
     total_cost: int
     status: str = "PENDING"
     payout: Optional[int] = None
-    source: str = "IPAT_SYNC"
+    source: str = "IPAT_RECENT"
     created_at: Optional[datetime] = None
     mode: str = "REAL"
     receipt_unique_id: Optional[str] = None
