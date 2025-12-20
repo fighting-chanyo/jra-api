@@ -14,7 +14,10 @@ def scrape_past_history_csv(creds: IpatAuth):
     
     with sync_playwright() as p:
         is_headless = os.getenv("HEADLESS", "true").lower() != "false"
-        browser = p.chromium.launch(headless=is_headless)
+        browser = p.chromium.launch(
+            headless=is_headless,
+            args=["--disable-cache", "--disk-cache-size=0"]
+        )
         # User-Agentを設定して、一般的なブラウザからのアクセスに見せかける
         context = browser.new_context(
             accept_downloads=True,
@@ -148,6 +151,46 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
         place_match = re.search(r"^([^\s]+)", text_content)
         race_place = place_match.group(1) if place_match else "Unknown"
         
+        # Parse Weekday and Calculate Date
+        # "中京 （土） 8R" -> "土"
+        weekday_match = re.search(r"（(.)）", text_content)
+        race_weekday_str = weekday_match.group(1) if weekday_match else None
+        
+        calculated_date_str = date_str
+        if race_weekday_str:
+            try:
+                # 節のアンカー日（土曜日）を基準に日付を決定するロジック
+                # 1. スクレイプ実行日(D)を基準にする
+                scrape_date = datetime.now()
+                scrape_weekday = scrape_date.weekday() # Mon=0, ..., Sun=6
+                
+                # 2. Dに最も近い土曜日(S)を求める
+                # 土曜=5. offset = (5 - scrape_weekday + 3) % 7 - 3
+                # 月(0) -> -2 (前の土曜), 金(4) -> +1 (次の土曜), 土(5) -> 0, 日(6) -> -1 (前の土曜)
+                offset_to_saturday = (5 - scrape_weekday + 3) % 7 - 3
+                anchor_saturday = scrape_date + timedelta(days=offset_to_saturday)
+                
+                # 3. レース開催日のオフセットを計算
+                # 金: -1, 土: 0, 日: 1, 月: 2, 火: 3
+                target_weekday_map = {'金': -1, '土': 0, '日': 1, '月': 2, '火': 3}
+                
+                if race_weekday_str in target_weekday_map:
+                    day_diff = target_weekday_map[race_weekday_str]
+                    race_date = anchor_saturday + timedelta(days=day_diff)
+                    calculated_date_str = race_date.strftime("%Y%m%d")
+                else:
+                    # フォールバック: 従来のマッピング（水・木など）
+                    # 基本的にあり得ないが、念のため当日か未来の直近の日付とする
+                    weekday_map = {'水': 2, '木': 3}
+                    if race_weekday_str in weekday_map:
+                        base_weekday = scrape_weekday
+                        target_weekday = weekday_map[race_weekday_str]
+                        diff_days = (target_weekday - base_weekday + 7) % 7
+                        race_date = scrape_date + timedelta(days=diff_days)
+                        calculated_date_str = race_date.strftime("%Y%m%d")
+            except Exception as e:
+                print(f"⚠️ Date calculation failed: {e}")
+
         # Parse Race No
         race_no_match = re.search(r"(\d+)R", text_content)
         race_number_str = race_no_match.group(1) if race_no_match else "00"
@@ -304,7 +347,7 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
         
         ticket = {
             "raw": {
-                "race_date_str": date_str,
+                "race_date_str": calculated_date_str,
                 "race_place": race_place,
                 "race_number_str": race_number_str,
                 "receipt_no": receipt_no,
@@ -344,7 +387,10 @@ def scrape_recent_history(creds: IpatAuth):
     
     with sync_playwright() as p:
         is_headless = os.getenv("HEADLESS", "true").lower() != "false"
-        browser = p.chromium.launch(headless=is_headless)
+        browser = p.chromium.launch(
+            headless=is_headless,
+            args=["--disable-cache", "--disk-cache-size=0"]
+        )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
