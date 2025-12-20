@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 import json
 import time
-from app.services.netkeiba_scraper import NetkeibaScraper
+from app.scrapers.netkeiba_scraper import NetkeibaScraper
 from app.services.supabase_client import get_supabase_client
 from app.services.judgment_logic import JudgmentLogic
 from app.schemas import Race, PayoutData, Ticket
