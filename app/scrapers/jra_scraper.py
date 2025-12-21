@@ -400,6 +400,10 @@ def scrape_recent_history(creds: IpatAuth):
         print("👉 Logging in to IPAT (Step 1: INET-ID)...")
         page.goto("https://www.ipat.jra.go.jp/")
         
+        # Check for closed message
+        if page.locator("text=ただいまの時間は投票受付時間外です。").is_visible():
+             raise Exception("JRA IPAT is currently closed.")
+        
         inet_id = creds.inet_id.strip()
         if not inet_id:
              raise Exception("INET-ID is missing")

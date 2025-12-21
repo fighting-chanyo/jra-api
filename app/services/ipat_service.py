@@ -67,6 +67,10 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
         # 2. DB形式への変換
         db_records = [_map_ticket_to_db_format(t, user_id) for t in parsed_tickets]
         
+        # 【修正】リスト内での重複排除 (receipt_unique_id)
+        unique_records_map = {r["receipt_unique_id"]: r for r in db_records}
+        db_records = list(unique_records_map.values())
+
         # 3. DBへ保存 (Upsert)
         print(f"   Upserting {len(db_records)} records to 'tickets' table...")
         supabase.table("tickets").upsert(db_records, on_conflict="receipt_unique_id").execute()
@@ -164,6 +168,10 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
         # 2. DB形式への変換
         db_records = [_map_ticket_to_db_format(t, user_id) for t in parsed_tickets]
 
+        # 【修正】リスト内での重複排除 (receipt_unique_id)
+        unique_records_map = {r["receipt_unique_id"]: r for r in db_records}
+        db_records = list(unique_records_map.values())
+
         if not db_records:
             # チケットが0件でも正常終了とする
             update_payload = {
@@ -177,6 +185,17 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
         # 3. DBへ保存 (Upsert)
         print(f"   Upserting {len(db_records)} records to 'tickets' table...")
         supabase.table("tickets").upsert(db_records, on_conflict="receipt_unique_id").execute()
+
+        # --- 即時判定処理 (結果確定済みのレースがあれば判定) ---
+        try:
+            race_ids = list(set(r["race_id"] for r in db_records))
+            if race_ids:
+                from app.services.race_service import RaceService
+                race_service = RaceService()
+                race_service.judge_existing_races(race_ids)
+        except Exception as e:
+            print(f"⚠️ Error during immediate judgment: {e}")
+            # 判定エラーでも同期自体は成功とみなして続行する
 
         # --- 成功時のログ更新 ---
         update_payload = {
@@ -203,6 +222,8 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
             user_friendly_error = "セッションがタイムアウトしました。もう一度お試しください。"
         elif "Login Failed or Menu Changed" in error_str:
             user_friendly_error = "ログイン後の画面遷移に失敗しました。メンテナンス中の可能性があります。"
+        elif "JRA IPAT is currently closed" in error_str:
+            user_friendly_error = "JRA ネット投票ページは現在クローズしています。"
         
         error_message = f"エラーが発生しました: {user_friendly_error}"
         print(f"❌ BACKGROUND JOB FAILED for log_id: {log_id}. Error: {error_message}")

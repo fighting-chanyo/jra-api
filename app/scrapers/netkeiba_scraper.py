@@ -18,7 +18,7 @@ class NetkeibaScraper:
         指定された年月の開催スケジュールを取得する
         """
         url = f"{self.BASE_URL}/top/calendar.html?year={year}&month={month}"
-        print(f"DEBUG: Accessing calendar URL: {url}")
+        # print(f"DEBUG: Accessing calendar URL: {url}")
         
         try:
             # headersを指定してリクエスト、タイムアウトを設定
@@ -30,7 +30,7 @@ class NetkeibaScraper:
         
         # resp.encoding = 'EUC-JP' # 削除
         
-        print(f"DEBUG: Response Status: {resp.status_code}")
+        # print(f"DEBUG: Response Status: {resp.status_code}")
         
         # バイナリデータから明示的にデコード
         html_content = resp.content.decode('euc-jp', errors='replace')
@@ -52,7 +52,7 @@ class NetkeibaScraper:
         # パターン2: ユーザー提供のHTML構造から日付を抽出する
         # <div class="RaceKaisaiBox HaveData"><p><span class="Day">6</span></p>...</div>
         kaisai_boxes = soup.select("div.RaceKaisaiBox.HaveData")
-        print(f"DEBUG: Found {len(kaisai_boxes)} boxes with class 'RaceKaisaiBox HaveData'")
+        # print(f"DEBUG: Found {len(kaisai_boxes)} boxes with class 'RaceKaisaiBox HaveData'")
         
         for box in kaisai_boxes:
             day_span = box.select_one("span.Day")
@@ -71,13 +71,13 @@ class NetkeibaScraper:
                     continue
 
         race_dates.sort()
-        print(f"DEBUG: Found {len(race_dates)} race dates: {race_dates}")
+        # print(f"DEBUG: Found {len(race_dates)} race dates: {race_dates}")
 
         all_races = []
         for date_str in race_dates:
             print(f"Fetching race list for {date_str}...")
             races = self._scrape_race_list(date_str)
-            print(f"DEBUG: Found {len(races)} races for {date_str}")
+            # print(f"DEBUG: Found {len(races)} races for {date_str}")
             all_races.extend(races)
             # サーバーへ負荷をかけすぎないように、リクエスト間に1秒の待機時間を設ける
             time.sleep(1)
@@ -90,7 +90,7 @@ class NetkeibaScraper:
         """
         # race_list.html はガワだけで、中身は race_list_sub.html で取得している可能性が高い
         url = f"{self.BASE_URL}/top/race_list_sub.html?kaisai_date={date_str}"
-        print(f"DEBUG: Accessing race list URL: {url}")
+        # print(f"DEBUG: Accessing race list URL: {url}")
         
         try:
             # headersを指定、タイムアウトを設定
@@ -109,11 +109,12 @@ class NetkeibaScraper:
         # --- DEBUG: HTMLの内容確認 ---
         # race_idが含まれているかチェック
         if "race_id=" not in html_content:
-            print(f"DEBUG: 'race_id=' NOT FOUND in response text for {date_str}")
+            # print(f"DEBUG: 'race_id=' NOT FOUND in response text for {date_str}")
             # 念のため元のURLも試す（あるいは別のパラメータが必要か）
             return []
         else:
-            print(f"DEBUG: 'race_id=' found in response text.")
+            # print(f"DEBUG: 'race_id=' found in response text.")
+            pass
             
         # race_id を抽出
         # <tr class="RaceList_DataList"> ... <a href="../race/result.html?race_id=202306050911&rf=race_list">
@@ -124,7 +125,7 @@ class NetkeibaScraper:
         # レース一覧の行を取得
         # Netkeibaの構造は複雑だが、RaceList_DataItem などを探す
         race_items = soup.select(".RaceList_DataItem")
-        print(f"DEBUG: Found {len(race_items)} race items")
+        # print(f"DEBUG: Found {len(race_items)} race items")
         
         races = []
         for item in race_items:
@@ -204,7 +205,7 @@ class NetkeibaScraper:
         レース結果と払戻金を取得する
         """
         url = f"{self.BASE_URL}/race/result.html?race_id={external_id}"
-        print(f"DEBUG: Accessing result URL: {url}")
+        # print(f"DEBUG: Accessing result URL: {url}")
         
         try:
             resp = requests.get(url, headers=self.HEADERS, timeout=10)

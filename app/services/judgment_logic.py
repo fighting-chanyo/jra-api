@@ -12,6 +12,14 @@ class JudgmentLogic:
         """
         bet_type = ticket.bet_type
         content = ticket.content
+        
+        # Pydanticモデルの場合は辞書に変換する
+        if not isinstance(content, dict):
+            if hasattr(content, "model_dump"):
+                content = content.model_dump()
+            elif hasattr(content, "dict"):
+                content = content.dict()
+
         method = ticket.buy_type # NORMAL, BOX, NAGASHI, FORMATION (from parsers.py)
         
         # 払戻データがない場合は判定不能（あるいはハズレ扱いだが、通常はデータがある前提）

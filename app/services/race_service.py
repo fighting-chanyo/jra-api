@@ -107,7 +107,7 @@ class RaceService:
         """
         target_date = target_date or date.today()
         
-        print(f"🏁 Updating results for {target_date}...")
+        print(f"INFO: Starting result update process for target_date={target_date}...")
         
         # 1. DBから当日のレースを取得 (status != 'FINISHED')
         # post_time のフィルタリングはPython側で行う
@@ -117,7 +117,7 @@ class RaceService:
         races = res.data
         
         if not races:
-            print(f"   No pending races found for {target_date}.")
+            print(f"INFO: No pending races found for {target_date}.")
             return {"processed": 0, "hits": 0}
 
         processed_count = 0
@@ -145,7 +145,7 @@ class RaceService:
                     
                     # 現在時刻と比較 (発走時刻 > 現在時刻 ならスキップ)
                     if post_time > now_utc:
-                        print(f"   Skipping Race {race['id']}: Post time {post_time} is in the future (Now: {now_utc})")
+                        # print(f"   Skipping Race {race['id']}: Post time {post_time} is in the future (Now: {now_utc})")
                         continue
                         
                 except ValueError as e:
@@ -156,15 +156,15 @@ class RaceService:
             if not external_id:
                 continue
 
-            print(f"   Checking result for Race {race['id']} (Ext: {external_id})...")
+            # print(f"   Checking result for Race {race['id']} (Ext: {external_id})...")
             
             # 2. 結果スクレイピング
             result_data = self.scraper.scrape_race_result(external_id)
             if not result_data:
-                print("      -> Not finalized yet.")
+                # print("      -> Not finalized yet.")
                 continue
 
-            print(f"DEBUG: Scraped result data for {race['id']}: {result_data}")
+            # print(f"DEBUG: Scraped result data for {race['id']}: {result_data}")
 
             # 3. DB更新 (Races)
             update_payload = {
@@ -174,11 +174,11 @@ class RaceService:
                 "payout_data": result_data["payout_data"],
                 "status": "FINISHED"
             }
-            print(f"DEBUG: Updating race {race['id']} with payload: {update_payload}")
+            # print(f"DEBUG: Updating race {race['id']} with payload: {update_payload}")
             
             try:
                 self.supabase.table("races").update(update_payload).eq("id", race["id"]).execute()
-                print(f"DEBUG: Successfully updated race {race['id']}")
+                print(f"INFO: Result found for race {race['id']}. Updated DB.")
             except Exception as e:
                 print(f"ERROR updating race {race['id']}: {e}")
 
@@ -188,7 +188,56 @@ class RaceService:
             hits = self._process_hit_detection(race["id"], result_data)
             total_hits += hits
 
+        print(f"INFO: Result update process completed. Processed: {processed_count}, Hits: {total_hits}")
         return {"processed": processed_count, "hits": total_hits}
+
+    def judge_existing_races(self, race_ids: list[str]):
+        """
+        指定されたレースIDリストのうち、既に結果が確定しているものについて
+        即座に判定処理を行う
+        """
+        if not race_ids:
+            return
+
+        print(f"🔍 Checking for finished races among {len(race_ids)} IDs...")
+        
+        # Supabaseの `in` フィルタを使って一括取得
+        # status='FINISHED' のものだけ取得
+        try:
+            res = self.supabase.table("races") \
+                .select("*") \
+                .in_("id", race_ids) \
+                .eq("status", "FINISHED") \
+                .execute()
+            
+            finished_races = res.data
+            if not finished_races:
+                print("   No finished races found in the provided list.")
+                return
+
+            print(f"   Found {len(finished_races)} finished races. Running judgment...")
+
+            for race in finished_races:
+                # DBのレコードから result_data を再構築
+                # update_results で使っている形式に合わせる
+                result_data = {
+                    "result_1st": race.get("result_1st"),
+                    "result_2nd": race.get("result_2nd"),
+                    "result_3rd": race.get("result_3rd"),
+                    "payout_data": race.get("payout_data")
+                }
+                
+                # 必須データが欠けていないか簡易チェック
+                if not (result_data["result_1st"] and result_data["payout_data"]):
+                    print(f"   ⚠️ Race {race['id']} is marked FINISHED but lacks result data.")
+                    continue
+
+                # 判定処理を実行
+                hits = self._process_hit_detection(race["id"], result_data)
+                print(f"   Race {race['id']}: Processed judgment. Hits: {hits}")
+
+        except Exception as e:
+            print(f"ERROR in judge_existing_races: {e}")
 
     def _process_hit_detection(self, race_id: str, result_data: dict):
         """

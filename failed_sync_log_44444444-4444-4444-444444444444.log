@@ -1,0 +1,3 @@
+Failed to update sync_logs for log_id=44444444-4444-4444-444444444444
+Error: {'message': 'invalid input syntax for type uuid: "44444444-4444-4444-444444444444"', 'code': '22P02', 'hint': None, 'details': None}
+Original error: エラーが発生しました: {'message': 'invalid input syntax for type uuid: "44444444-4444-4444-444444444444"', 'code': '22P02', 'hint': None, 'details': None}

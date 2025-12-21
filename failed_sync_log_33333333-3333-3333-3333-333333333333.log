@@ -1,7 +1,6 @@
 Failed to update sync_logs for log_id=33333333-3333-3333-3333-333333333333
-Error: {'message': 'null value in column "user_id" of relation "sync_logs" violates not-null constraint', 'code': '23502', 'hint': None, 'details': 'Failing row contains (33333333-3333-3333-3333-333333333333, null, ERROR, エラーが発生しました: Page.wait_for_selector: Timeout ..., 2025-12-20 07:26:28.730686+00, 2025-12-20 07:26:28.730686+00, null).'}
-Original error: エラーが発生しました: Page.wait_for_selector: Timeout 30000ms exceeded.
+Error: {'message': 'null value in column "user_id" of relation "sync_logs" violates not-null constraint', 'code': '23502', 'hint': None, 'details': 'Failing row contains (33333333-3333-3333-3333-333333333333, null, ERROR, エラーが発生しました: Page.fill: Timeout 30000ms excee..., 2025-12-20 09:11:22.22338+00, 2025-12-20 09:11:22.22338+00, null).'}
+Original error: エラーが発生しました: Page.fill: Timeout 30000ms exceeded.
 Call log:
-  - waiting for locator("h1:has-text('投票履歴一覧')") to be visible
-    42 × locator resolved to hidden <h1 class="text text-lg">投票履歴一覧</h1>
+  - waiting for locator("input[name='inetid']")
 
