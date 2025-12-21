@@ -71,3 +71,44 @@ class Ticket(BaseModel):
     created_at: Optional[datetime] = None
     mode: str = "REAL"
     receipt_unique_id: Optional[str] = None
+
+# --- Image Analysis Models ---
+
+from enum import Enum
+
+class BetType(str, Enum):
+    WIN = "WIN"
+    PLACE = "PLACE"
+    BRACKET_QUINELLA = "BRACKET_QUINELLA"
+    QUINELLA = "QUINELLA"
+    QUINELLA_PLACE = "QUINELLA_PLACE"
+    EXACTA = "EXACTA"
+    TRIO = "TRIO"
+    TRIFECTA = "TRIFECTA"
+
+class BuyType(str, Enum):
+    NORMAL = "NORMAL"
+    BOX = "BOX"
+    FORMATION = "FORMATION"
+    NAGASHI = "NAGASHI"
+
+class AnalyzedBetData(BaseModel):
+    date: Optional[str] = Field(None, description="YYYY-MM-DD")
+    place: Optional[str] = Field(None, description="JRA Place Code")
+    race_number: Optional[int] = Field(None, ge=1, le=12)
+    bet_type: Optional[BetType] = None
+    method: Optional[BuyType] = None
+    selections: Optional[List[List[str]]] = None
+    axis: Optional[List[str]] = None
+    partners: Optional[List[str]] = None
+    multi: bool = False
+    amount: Optional[int] = None
+
+class AnalysisResult(BaseModel):
+    raw_text: Optional[str] = None
+    confidence: float = 0.0
+    data: AnalyzedBetData
+
+class AnalysisResponse(BaseModel):
+    results: List[AnalysisResult]
+

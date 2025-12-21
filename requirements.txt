@@ -6,3 +6,5 @@ pydantic
 beautifulsoup4
 supabase
 requests
+google-genai
+python-multipart
