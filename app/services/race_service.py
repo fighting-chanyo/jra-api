@@ -109,15 +109,14 @@ class RaceService:
         
         print(f"INFO: Starting result update process for target_date={target_date}...")
         
-        # 1. DBから当日のレースを取得 (status != 'FINISHED')
-        # post_time のフィルタリングはPython側で行う
-        
-        # Supabaseクエリ
-        res = self.supabase.table("races").select("*").eq("date", target_date.isoformat()).neq("status", "FINISHED").execute()
+        # 1. DBから当日のレースを取得
+        # 変更: status != 'FINISHED' のフィルタを外し、全レースを取得する。
+        # これにより、既に結果取得済みのレースに対しても、後から追加されたチケットの判定を行えるようにする。
+        res = self.supabase.table("races").select("*").eq("date", target_date.isoformat()).execute()
         races = res.data
         
         if not races:
-            print(f"INFO: No pending races found for {target_date}.")
+            print(f"INFO: No races found for {target_date}.")
             return {"processed": 0, "hits": 0}
 
         processed_count = 0
@@ -135,16 +134,13 @@ class RaceService:
                     
                     # タイムゾーン情報の有無を確認してUTCに統一
                     if post_time.tzinfo is None:
-                        # タイムゾーン情報がない場合、DBがUTCで保存していると仮定してUTCを付与
-                        # もしJSTで保存されているなら timezone(timedelta(hours=9)) を付与
-                        # Supabaseのtimestamptzは通常UTCで返る
                         post_time = post_time.replace(tzinfo=timezone.utc)
                     else:
-                        # タイムゾーン情報がある場合はUTCに変換
                         post_time = post_time.astimezone(timezone.utc)
                     
                     # 現在時刻と比較 (発走時刻 > 現在時刻 ならスキップ)
-                    if post_time > now_utc:
+                    # ただし、既にFINISHEDの場合は結果があるのでスキップしない
+                    if race.get("status") != "FINISHED" and post_time > now_utc:
                         # print(f"   Skipping Race {race['id']}: Post time {post_time} is in the future (Now: {now_utc})")
                         continue
                         
@@ -156,37 +152,49 @@ class RaceService:
             if not external_id:
                 continue
 
-            # print(f"   Checking result for Race {race['id']} (Ext: {external_id})...")
-            
-            # 2. 結果スクレイピング
-            result_data = self.scraper.scrape_race_result(external_id)
-            if not result_data:
-                # print("      -> Not finalized yet.")
-                continue
+            # 既にFINISHEDかどうか確認
+            is_finished = race.get("status") == "FINISHED"
+            result_data = None
 
-            # print(f"DEBUG: Scraped result data for {race['id']}: {result_data}")
+            if is_finished:
+                # 既に結果がある場合はDBの値を使用
+                result_data = {
+                    "result_1st": race.get("result_1st"),
+                    "result_2nd": race.get("result_2nd"),
+                    "result_3rd": race.get("result_3rd"),
+                    "payout_data": race.get("payout_data")
+                }
+                # データが不完全なら再取得を試みる
+                if not (result_data["result_1st"] and result_data["payout_data"]):
+                     is_finished = False 
 
-            # 3. DB更新 (Races)
-            update_payload = {
-                "result_1st": result_data["result_1st"],
-                "result_2nd": result_data["result_2nd"],
-                "result_3rd": result_data["result_3rd"],
-                "payout_data": result_data["payout_data"],
-                "status": "FINISHED"
-            }
-            # print(f"DEBUG: Updating race {race['id']} with payload: {update_payload}")
-            
-            try:
-                self.supabase.table("races").update(update_payload).eq("id", race["id"]).execute()
-                print(f"INFO: Result found for race {race['id']}. Updated DB.")
-            except Exception as e:
-                print(f"ERROR updating race {race['id']}: {e}")
+            if not is_finished:
+                # 2. 結果スクレイピング
+                result_data = self.scraper.scrape_race_result(external_id)
+                if not result_data:
+                    # print("      -> Not finalized yet.")
+                    continue
 
-            processed_count += 1
+                # 3. DB更新 (Races)
+                update_payload = {
+                    "result_1st": result_data["result_1st"],
+                    "result_2nd": result_data["result_2nd"],
+                    "result_3rd": result_data["result_3rd"],
+                    "payout_data": result_data["payout_data"],
+                    "status": "FINISHED"
+                }
+                
+                try:
+                    self.supabase.table("races").update(update_payload).eq("id", race["id"]).execute()
+                    print(f"INFO: Result found for race {race['id']}. Updated DB.")
+                    processed_count += 1
+                except Exception as e:
+                    print(f"ERROR updating race {race['id']}: {e}")
 
-            # 4. 的中判定
-            hits = self._process_hit_detection(race["id"], result_data)
-            total_hits += hits
+            # 4. 的中判定 (result_dataがあれば実行)
+            if result_data:
+                hits = self._process_hit_detection(race["id"], result_data)
+                total_hits += hits
 
         print(f"INFO: Result update process completed. Processed: {processed_count}, Hits: {total_hits}")
         return {"processed": processed_count, "hits": total_hits}

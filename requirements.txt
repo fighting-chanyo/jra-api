@@ -8,3 +8,4 @@ supabase
 requests
 google-genai
 python-multipart
+google-cloud-storage

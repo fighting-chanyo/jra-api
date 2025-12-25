@@ -92,22 +92,38 @@ class BuyType(str, Enum):
     FORMATION = "FORMATION"
     NAGASHI = "NAGASHI"
 
-class AnalyzedBetData(BaseModel):
-    date: Optional[str] = Field(None, description="YYYY-MM-DD")
-    place: Optional[str] = Field(None, description="JRA Place Code")
-    race_number: Optional[int] = Field(None, ge=1, le=12)
-    bet_type: Optional[BetType] = None
-    method: Optional[BuyType] = None
-    selections: Optional[List[List[str]]] = None
-    axis: Optional[List[str]] = None
-    partners: Optional[List[str]] = None
-    multi: bool = False
-    amount: Optional[int] = None
+class AnalyzeQueueRequest(BaseModel):
+    queueId: str
+
+class RaceInfo(BaseModel):
+    date: Optional[str] = None
+    place: Optional[str] = None
+    race_number: Optional[int] = None
+
+class TicketContent(BaseModel):
+    type: str
+    method: str
+    multi: bool
+    selections: List[List[str]]
+    axis: List[str]
+    partners: List[str]
+    positions: List[int]
+
+class TicketCandidate(BaseModel):
+    receipt_unique_id: Optional[str] = None
+    bet_type: str
+    buy_type: str
+    content: TicketContent
+    amount_per_point: Optional[int] = None
+    total_points: Optional[int] = None
+    total_cost: Optional[int] = None
+    confidence: float
+    warnings: List[str] = []
 
 class AnalysisResult(BaseModel):
-    raw_text: Optional[str] = None
-    confidence: float = 0.0
-    data: AnalyzedBetData
+    race: RaceInfo
+    tickets: List[TicketCandidate]
+    confidence: float
 
 class AnalysisResponse(BaseModel):
     results: List[AnalysisResult]
