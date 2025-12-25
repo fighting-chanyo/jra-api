@@ -1,39 +1,66 @@
 from typing import Optional, Dict, Any, List
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime, timedelta, timezone
 from app.constants import RACE_COURSE_MAP
 import time
+import random
 
 class NetkeibaScraper:
     BASE_URL = "https://race.netkeiba.com"
-    # User-Agentを設定してブラウザからのアクセスに見せかける
-    HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+            "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        })
+        
+        retry = Retry(
+            total=5,
+            connect=5,
+            read=5,
+            backoff_factor=1.0,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"],
+            raise_on_status=False,
+        )
+        
+        adapter = HTTPAdapter(max_retries=retry, pool_connections=5, pool_maxsize=5)
+        self.session.mount("https://", adapter)
+        
+        # 初回のみIPアドレスを確認してログに出す
+        try:
+            ip_resp = self.session.get("https://api.ipify.org", timeout=5)
+            print(f"INFO: Current Public IP: {ip_resp.text}")
+        except Exception as e:
+            print(f"WARNING: Failed to check public IP: {e}")
+
+    def _get_html(self, url: str, encoding: str = None) -> Optional[str]:
+        time.sleep(random.uniform(0.3, 1.2)) # ジッター
+        try:
+            resp = self.session.get(url, timeout=(3.05, 20))
+            resp.raise_for_status()
+            if encoding:
+                return resp.content.decode(encoding, errors='replace')
+            return resp.text
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR: Failed to fetch {url}. Reason: {e}")
+            return None
 
     def scrape_monthly_schedule(self, year: int, month: int):
         """
         指定された年月の開催スケジュールを取得する
         """
         url = f"{self.BASE_URL}/top/calendar.html?year={year}&month={month}"
-        # print(f"DEBUG: Accessing calendar URL: {url}")
         
-        try:
-            # headersを指定してリクエスト、タイムアウトを設定
-            resp = requests.get(url, headers=self.HEADERS, timeout=10)
-            resp.raise_for_status() # HTTPエラーがあれば例外を発生させる
-        except requests.exceptions.RequestException as e:
-            print(f"ERROR: Failed to fetch calendar page for {year}-{month}: {e}")
+        html_content = self._get_html(url, encoding='euc-jp')
+        if not html_content:
             return []
-        
-        # resp.encoding = 'EUC-JP' # 削除
-        
-        # print(f"DEBUG: Response Status: {resp.status_code}")
-        
-        # バイナリデータから明示的にデコード
-        html_content = resp.content.decode('euc-jp', errors='replace')
+
         soup = BeautifulSoup(html_content, 'html.parser')
 
         race_dates = []
@@ -90,21 +117,10 @@ class NetkeibaScraper:
         """
         # race_list.html はガワだけで、中身は race_list_sub.html で取得している可能性が高い
         url = f"{self.BASE_URL}/top/race_list_sub.html?kaisai_date={date_str}"
-        # print(f"DEBUG: Accessing race list URL: {url}")
         
-        try:
-            # headersを指定、タイムアウトを設定
-            resp = requests.get(url, headers=self.HEADERS, timeout=10)
-            resp.raise_for_status() # 4xx or 5xx エラーの場合に例外を発生させる
-        except requests.exceptions.RequestException as e:
-            print(f"ERROR: Failed to fetch race list for {date_str}. Reason: {e}")
-            return [] # エラーが発生した場合は空のリストを返す
-        
-        # resp.encoding = 'EUC-JP' # 削除
-        
-        # バイナリデータから明示的にデコード
-        # race_list_sub.html はUTF-8の可能性が高い (文字化け "2罩恰" -> "2歳" から推測)
-        html_content = resp.content.decode('utf-8', errors='replace')
+        html_content = self._get_html(url, encoding='utf-8')
+        if not html_content:
+            return []
 
         # --- DEBUG: HTMLの内容確認 ---
         # race_idが含まれているかチェック
@@ -205,11 +221,12 @@ class NetkeibaScraper:
         レース結果と払戻金を取得する
         """
         url = f"{self.BASE_URL}/race/result.html?race_id={external_id}"
-        # print(f"DEBUG: Accessing result URL: {url}")
+        
+        time.sleep(random.uniform(0.3, 1.2)) # ジッター
         
         try:
-            resp = requests.get(url, headers=self.HEADERS, timeout=10)
-            resp.raise_for_status() # 4xx or 5xx エラーの場合に例外を発生させる
+            resp = self.session.get(url, timeout=(3.05, 20))
+            resp.raise_for_status()
             
             # エンコーディング処理の改善
             # まずUTF-8を試行し、失敗したらEUC-JP (Netkeibaは混在しているため)
