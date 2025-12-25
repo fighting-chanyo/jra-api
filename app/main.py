@@ -1,11 +1,12 @@
 from fastapi import FastAPI
-from app.routers import ipat, races, analysis
+from app.routers import ipat, races, analysis, debug
 
 app = FastAPI()
 
 app.include_router(ipat.router, prefix="/api")
 app.include_router(races.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
+app.include_router(debug.router, prefix="/api")
 
 
 @app.get("/")
