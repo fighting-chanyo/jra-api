@@ -30,16 +30,33 @@ def _new_session() -> requests.Session:
     return s
 
 
-def _probe(session: requests.Session, url: str, timeout: tuple[float, float] = (5.0, 10.0)) -> Dict[str, Any]:
+def _probe(
+    session: requests.Session,
+    url: str,
+    timeout: tuple[float, float] = (5.0, 10.0),
+    read_body: bool = False,
+) -> Dict[str, Any]:
     started = datetime.now()
     try:
-        resp = session.get(url, timeout=timeout)
+        resp = session.get(url, timeout=timeout, allow_redirects=True)
         elapsed_ms = int((datetime.now() - started).total_seconds() * 1000)
+        content_type = resp.headers.get("content-type")
+        content_length = resp.headers.get("content-length")
+        snippet: Optional[str] = None
+        if read_body:
+            try:
+                snippet = resp.text[:200]
+            except Exception:
+                snippet = None
         return {
             "url": url,
+            "final_url": str(resp.url),
             "ok": resp.ok,
             "status_code": resp.status_code,
             "elapsed_ms": elapsed_ms,
+            "content_type": content_type,
+            "content_length": content_length,
+            "body_snippet": snippet,
         }
     except requests.exceptions.SSLError as e:
         elapsed_ms = int((datetime.now() - started).total_seconds() * 1000)
@@ -76,20 +93,17 @@ def debug_egress() -> Dict[str, Any]:
     checks: List[Dict[str, Any]] = []
 
     # 外向きIP確認（JSONではなくプレーンテキスト）
-    ip_check = _probe(session, "https://api.ipify.org", timeout=(3.0, 5.0))
+    ip_check = _probe(session, "https://api.ipify.org", timeout=(3.0, 5.0), read_body=True)
     public_ip: Optional[str] = None
     if ip_check.get("ok"):
-        try:
-            # もう一度本文を取りたいので、軽く再取得
-            resp = session.get("https://api.ipify.org", timeout=(3.0, 5.0))
-            if resp.ok:
-                public_ip = resp.text.strip()
-        except Exception:
-            public_ip = None
+        snippet = ip_check.get("body_snippet")
+        if isinstance(snippet, str):
+            public_ip = snippet.strip().splitlines()[0][:64]
     checks.append(ip_check)
 
-    # ベンチマーク（一般サイト）
-    checks.append(_probe(session, "https://www.google.com", timeout=(3.0, 8.0)))
+    # ベンチマーク（一般サイト）: 204を返すURLを使うと判定がブレにくい
+    checks.append(_probe(session, "https://www.gstatic.com/generate_204", timeout=(3.0, 8.0)))
+    checks.append(_probe(session, "https://example.com/", timeout=(3.0, 8.0)))
 
     # netkeiba（カレンダー/レース一覧）
     jst = timezone(timedelta(hours=9))
