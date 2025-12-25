@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 class IpatAuth(BaseModel):
     inet_id: str
@@ -103,11 +103,21 @@ class RaceInfo(BaseModel):
 class TicketContent(BaseModel):
     type: str
     method: str
-    multi: bool
-    selections: List[List[str]]
-    axis: List[str]
-    partners: List[str]
-    positions: List[int]
+    multi: Optional[bool] = None
+    selections: List[List[str]] = Field(default_factory=list)
+    axis: List[str] = Field(default_factory=list)
+    partners: List[str] = Field(default_factory=list)
+    positions: List[int] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_nullable_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        for key in ("selections", "axis", "partners", "positions"):
+            if data.get(key) is None:
+                data[key] = []
+        return data
 
 class TicketCandidate(BaseModel):
     receipt_unique_id: Optional[str] = None
@@ -118,7 +128,7 @@ class TicketCandidate(BaseModel):
     total_points: Optional[int] = None
     total_cost: Optional[int] = None
     confidence: float
-    warnings: List[str] = []
+    warnings: List[str] = Field(default_factory=list)
 
 class AnalysisResult(BaseModel):
     race: RaceInfo

@@ -8,48 +8,89 @@ from datetime import datetime, timedelta, timezone
 from app.constants import RACE_COURSE_MAP
 import time
 import random
+import os
 
 class NetkeibaScraper:
     BASE_URL = "https://race.netkeiba.com"
 
     def __init__(self):
+        self._init_session()
+
+        # 初回のみIPアドレスを確認してログに出す（外部依存を増やすのでデフォルトは無効）
+        if os.getenv("NETKEIBA_CHECK_IP", "0") == "1":
+            try:
+                ip_resp = self.session.get("https://api.ipify.org", timeout=5)
+                print(f"INFO: Current Public IP: {ip_resp.text}")
+            except Exception as e:
+                print(f"WARNING: Failed to check public IP: {e}")
+
+    def _init_session(self) -> None:
         self.session = requests.Session()
+        # Cloud Run等で環境変数HTTP(S)_PROXYが混入していると挙動が不安定になることがあるため無効化
+        self.session.trust_env = False
+
+        # ブラウザ風ヘッダは有効だが、Sec-* 系は整合性が取りづらくWAFで逆に怪しまれることがあるため最小限にする
         self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+            "Referer": "https://race.netkeiba.com/",
+            "Connection": "close",
         })
-        
-        retry = Retry(
-            total=5,
-            connect=5,
-            read=5,
-            backoff_factor=1.0,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET"],
-            raise_on_status=False,
-        )
-        
-        adapter = HTTPAdapter(max_retries=retry, pool_connections=5, pool_maxsize=5)
+
+        # urllib3の自動リトライはSSLEOF等で意図せず短時間に連打になりやすいので無効化し、
+        # アプリ側で指数バックオフ＋ジッター付きの手動リトライを行う
+        retry = Retry(total=0, connect=0, read=0, redirect=0, status=0)
+        adapter = HTTPAdapter(max_retries=retry, pool_connections=2, pool_maxsize=2)
         self.session.mount("https://", adapter)
-        
-        # 初回のみIPアドレスを確認してログに出す
-        try:
-            ip_resp = self.session.get("https://api.ipify.org", timeout=5)
-            print(f"INFO: Current Public IP: {ip_resp.text}")
-        except Exception as e:
-            print(f"WARNING: Failed to check public IP: {e}")
+        self.session.mount("http://", adapter)
 
     def _get_html(self, url: str, encoding: str = None) -> Optional[str]:
-        time.sleep(random.uniform(0.3, 1.2)) # ジッター
-        try:
-            resp = self.session.get(url, timeout=(3.05, 20))
-            resp.raise_for_status()
-            if encoding:
-                return resp.content.decode(encoding, errors='replace')
-            return resp.text
-        except requests.exceptions.RequestException as e:
-            print(f"ERROR: Failed to fetch {url}. Reason: {e}")
-            return None
+        max_attempts = int(os.getenv("NETKEIBA_MAX_ATTEMPTS", "5"))
+        base_sleep = float(os.getenv("NETKEIBA_BASE_SLEEP_SEC", "1.0"))
+        timeout_connect = float(os.getenv("NETKEIBA_TIMEOUT_CONNECT_SEC", "5.0"))
+        timeout_read = float(os.getenv("NETKEIBA_TIMEOUT_READ_SEC", "30.0"))
+
+        # 1回目も軽くジッター（機械的な周期を避ける）
+        time.sleep(random.uniform(0.5, 1.5))
+
+        last_error: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                resp = self.session.get(url, timeout=(timeout_connect, timeout_read))
+
+                # 429/5xx は再試行（WAF/レート制限想定）
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    last_error = requests.HTTPError(f"HTTP {resp.status_code}")
+                    raise requests.HTTPError(f"HTTP {resp.status_code}")
+
+                resp.raise_for_status()
+                if encoding:
+                    return resp.content.decode(encoding, errors='replace')
+                return resp.text
+
+            except requests.exceptions.SSLError as e:
+                # Cloud Run等でSSLEOFErrorが出る場合、接続プールをリセットして再試行
+                last_error = e
+                print(f"WARNING: SSL error fetching {url} (attempt {attempt}/{max_attempts}): {e}")
+                self._init_session()
+
+            except (requests.exceptions.ConnectionError, requests.HTTPError) as e:
+                last_error = e
+                print(f"WARNING: Retryable error fetching {url} (attempt {attempt}/{max_attempts}): {e}")
+
+            except requests.exceptions.RequestException as e:
+                # その他は基本再試行しない（タイムアウト等は上のConnectionErrorに入ることが多い）
+                print(f"ERROR: Failed to fetch {url}. Reason: {e}")
+                return None
+
+            if attempt < max_attempts:
+                backoff = base_sleep * (2 ** (attempt - 1))
+                jitter = random.uniform(0.0, 1.0)
+                time.sleep(min(backoff + jitter, 60.0))
+
+        print(f"ERROR: Failed to fetch {url} after {max_attempts} attempts. Last error: {last_error}")
+        return None
 
     def scrape_monthly_schedule(self, year: int, month: int):
         """
@@ -65,7 +106,7 @@ class NetkeibaScraper:
 
         race_dates = []
         
-        # パターン1: リンクから kaisai_date を探す (念のため残す)
+        # パターン1: リンクから kaisai_date を探す
         links = soup.find_all("a", href=True)
         for link in links:
             href = link.get("href")
@@ -77,20 +118,16 @@ class NetkeibaScraper:
                         race_dates.append(d)
 
         # パターン2: ユーザー提供のHTML構造から日付を抽出する
-        # <div class="RaceKaisaiBox HaveData"><p><span class="Day">6</span></p>...</div>
         kaisai_boxes = soup.select("div.RaceKaisaiBox.HaveData")
-        # print(f"DEBUG: Found {len(kaisai_boxes)} boxes with class 'RaceKaisaiBox HaveData'")
         
         for box in kaisai_boxes:
             day_span = box.select_one("span.Day")
             if day_span:
                 try:
                     day_text = day_span.text.strip()
-                    # 数字以外が含まれている可能性を考慮して抽出
                     day_match = re.search(r'\d+', day_text)
                     if day_match:
                         day = int(day_match.group(0))
-                        # YYYYMMDD 形式にする
                         date_str = f"{year}{month:02d}{day:02d}"
                         if date_str not in race_dates:
                             race_dates.append(date_str)
@@ -98,15 +135,13 @@ class NetkeibaScraper:
                     continue
 
         race_dates.sort()
-        # print(f"DEBUG: Found {len(race_dates)} race dates: {race_dates}")
 
         all_races = []
         for date_str in race_dates:
             print(f"Fetching race list for {date_str}...")
             races = self._scrape_race_list(date_str)
-            # print(f"DEBUG: Found {len(races)} races for {date_str}")
             all_races.extend(races)
-            # サーバーへ負荷をかけすぎないように、リクエスト間に1秒の待機時間を設ける
+            # ループ内でも待機（_get_html内のsleepと合わせて長めになる）
             time.sleep(1)
             
         return all_races
@@ -115,74 +150,41 @@ class NetkeibaScraper:
         """
         特定の日付の全レース情報を取得する
         """
-        # race_list.html はガワだけで、中身は race_list_sub.html で取得している可能性が高い
         url = f"{self.BASE_URL}/top/race_list_sub.html?kaisai_date={date_str}"
         
         html_content = self._get_html(url, encoding='utf-8')
         if not html_content:
+            print(f"ERROR: Failed to fetch race list for {date_str}.")
             return []
 
-        # --- DEBUG: HTMLの内容確認 ---
-        # race_idが含まれているかチェック
         if "race_id=" not in html_content:
-            # print(f"DEBUG: 'race_id=' NOT FOUND in response text for {date_str}")
-            # 念のため元のURLも試す（あるいは別のパラメータが必要か）
             return []
-        else:
-            # print(f"DEBUG: 'race_id=' found in response text.")
-            pass
             
-        # race_id を抽出
-        # <tr class="RaceList_DataList"> ... <a href="../race/result.html?race_id=202306050911&rf=race_list">
-        # あるいは <a href="/race/shutuba.html?race_id=...">
-        
         soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # レース一覧の行を取得
-        # Netkeibaの構造は複雑だが、RaceList_DataItem などを探す
         race_items = soup.select(".RaceList_DataItem")
-        # print(f"DEBUG: Found {len(race_items)} race items")
         
         races = []
         for item in race_items:
             try:
-                # R番号
                 r_div = item.select_one(".Race_Num")
                 if not r_div: continue
                 r_num_str = r_div.text.strip().replace('R', '')
                 race_number = int(r_num_str)
                 
-                # レース名
-                # name_div = item.select_one(".Race_Name") # 旧セレクタ
-                name_div = item.select_one(".ItemTitle") # ご提示のHTML構造に合わせて修正
+                name_div = item.select_one(".ItemTitle")
                 race_name = name_div.text.strip() if name_div else "Unknown"
                 
-                # 発走時刻
                 time_div = item.select_one(".RaceList_Itemtime")
                 post_time_str = time_div.text.strip() if time_div else None
                 post_time = None
                 if post_time_str:
-                    # date_str (YYYYMMDD) + HH:MM
-                    # datetime object
                     hm = post_time_str.split(':')
                     if len(hm) == 2:
                         year = int(date_str[:4])
                         month = int(date_str[4:6])
                         day = int(date_str[6:8])
-                        # JSTのタイムゾーン情報を付与
                         post_time = datetime(year, month, day, int(hm[0]), int(hm[1]), tzinfo=timezone(timedelta(hours=9)))
                 
-                # 場所コード
-                # URLから場所コードを推測するのは難しいが、race_idから取れる
-                # race_id: YYYY PP DD RR NN (PP: Place Code)
-                # Netkeiba race_id: 2023 06 05 09 11
-                # 2023: Year
-                # 06: Place (Nakayama?) -> Need mapping
-                # 05: Kai (5th meeting)
-                # 09: Day (9th day)
-                # 11: Race Num
-                
-                # リンクからrace_idを取得
                 link = item.select_one("a")
                 if not link: continue
                 href = link.get("href")
@@ -190,16 +192,7 @@ class NetkeibaScraper:
                 if not match: continue
                 
                 external_id = match.group(1)
-                
-                # Netkeiba Place Code -> JRA Place Code
-                # Netkeiba: 01:Sapporo, 02:Hakodate, 03:Fukushima, 04:Niigata, 05:Tokyo, 06:Nakayama, 07:Chukyo, 08:Kyoto, 09:Hanshin, 10:Kokura
-                # JRA: Same?
-                # Let's assume same for now, or use mapping if needed.
-                # app/constants.py might have RACE_COURSE_MAP
-                
                 nk_place_code = external_id[4:6]
-                # マッピングが必要ならここで変換
-                # 今回はそのまま使う（JRAコードと一致していることが多い）
                 place_code = nk_place_code 
                 
                 races.append({
@@ -222,14 +215,16 @@ class NetkeibaScraper:
         """
         url = f"{self.BASE_URL}/race/result.html?race_id={external_id}"
         
-        time.sleep(random.uniform(0.3, 1.2)) # ジッター
+        # _get_html を使うように変更（共通のリトライ・ジッターロジックを利用）
+        # ただしエンコーディング処理が特殊なので、ここでは直接sessionを使うか、_get_htmlを拡張する
+        # 今回は既存ロジックを生かすため、ここでも sleep を入れて session.get を呼ぶ
+        
+        time.sleep(random.uniform(1.0, 3.0))
         
         try:
-            resp = self.session.get(url, timeout=(3.05, 20))
+            resp = self.session.get(url, timeout=(5.0, 30.0))
             resp.raise_for_status()
             
-            # エンコーディング処理の改善
-            # まずUTF-8を試行し、失敗したらEUC-JP (Netkeibaは混在しているため)
             try:
                 html_content = resp.content.decode('utf-8')
             except UnicodeDecodeError:
@@ -260,37 +255,31 @@ class NetkeibaScraper:
             payout_data = {}
             payout_box = soup.find("div", class_="Result_Pay_Back")
             if not payout_box:
-                print(f"   -> Payout box not found for {external_id}.")
-                # 着順だけでも返す
                 return {
                     "result_1st": result_1st,
                     "result_2nd": result_2nd,
                     "result_3rd": result_3rd,
-                    "payout_data": {} # 空のデータを返す
+                    "payout_data": {}
                 }
 
-            # 各払い戻しテーブルを処理
             payout_tables = payout_box.find_all("table")
             
-            # 券種名とクラス名のマッピング (設計書のキーに合わせる)
             bet_type_map = {
                 "Tansho": "WIN",
                 "Fukusho": "PLACE",
-                "Wakuren": "BRACKET_QUINELLA", # JRA投票にないので無視しても良い
+                "Wakuren": "BRACKET_QUINELLA",
                 "Umaren": "QUINELLA",
                 "Wide": "QUINELLA_PLACE",
                 "Umatan": "EXACTA",
-                "Fuku3": "TRIO", # 3連複
-                "Tan3": "TRIFECTA"    # 3連単
+                "Fuku3": "TRIO",
+                "Tan3": "TRIFECTA"
             }
 
             for table in payout_tables:
                 for tr in table.find_all("tr"):
-                    # th から券種名を取得
                     th = tr.find("th")
                     if not th: continue
                     
-                    # class名から券種キーを取得
                     tr_class = tr.get("class", [""])[0]
                     bet_type_key = bet_type_map.get(tr_class)
 
@@ -303,14 +292,10 @@ class NetkeibaScraper:
                     if not result_td or not payout_td:
                         continue
 
-                    # 払い戻し金額の取得 (先に取得)
-                    # "520円" や "160円<br>190円" のようになっている
                     payout_texts = [p.strip() for p in payout_td.decode_contents().split('<br>')]
                     payout_monies = [int(re.sub(r'\D', '', p)) for p in payout_texts if re.search(r'\d', p)]
 
-                    # 馬番リストの取得
                     horse_groups = []
-                    # <span> や <li> から馬番を抽出するヘルパー
                     def get_numbers_from_tags(tags):
                         nums = []
                         for tag in tags:
@@ -319,21 +304,18 @@ class NetkeibaScraper:
                                 nums.append(int(num_text))
                         return nums
 
-                    if result_td.find("ul"): # 馬連、ワイド、3連系など
+                    if result_td.find("ul"):
                         groups = result_td.find_all("ul")
                         for group in groups:
                             numbers = get_numbers_from_tags(group.find_all("li"))
                             if numbers:
                                 horse_groups.append(numbers)
-                    else: # 単勝、複勝
+                    else:
                         numbers = get_numbers_from_tags(result_td.find_all("div"))
-                        # 単勝・複勝は各馬番が1つの結果に対応する
                         for num in numbers:
                             horse_groups.append([num])
 
-                    # データ整形
                     payout_list = []
-                    # 同着などで horse_groups と payout_monies の数が一致することを確認
                     if len(horse_groups) == len(payout_monies):
                         for i, horses in enumerate(horse_groups):
                             try:
@@ -342,12 +324,10 @@ class NetkeibaScraper:
                                     "money": payout_monies[i]
                                 })
                             except (ValueError, IndexError):
-                                print(f"  WARN: Could not parse payout entry for {bet_type_key}")
                                 continue
                     
                     if payout_list:
                         payout_data[bet_type_key] = payout_list
-
 
             return {
                 "result_1st": result_1st,
