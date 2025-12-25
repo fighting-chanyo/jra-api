@@ -5,20 +5,68 @@ from app.services.supabase_client import get_supabase_client
 from app.constants import RACE_COURSE_MAP
 from app.scrapers.jra_scraper import scrape_past_history_csv, scrape_recent_history
 
+def _normalize_date(date_str):
+    """日付文字列をYYYYMMDD形式に正規化する"""
+    if not date_str:
+        return ""
+    return str(date_str).replace("/", "").replace("-", "").replace("年", "").replace("月", "").replace("日", "").strip()
+
+def _normalize_horse_numbers(content):
+    """馬番リストを正規化（ゼロ埋め）し、可能ならソートする"""
+    new_content = content.copy()
+    
+    def process_list(lst, sort=True):
+        if not lst: return []
+        # ゼロ埋め
+        normalized = []
+        for x in lst:
+            s = str(x).strip()
+            if s.isdigit():
+                normalized.append(s.zfill(2))
+            else:
+                normalized.append(s)
+        
+        if sort:
+            return sorted(normalized)
+        return normalized
+
+    # axis: positionsがある場合はソートしない (位置情報との対応を維持するため)
+    has_positions = bool(new_content.get("positions"))
+    if "axis" in new_content:
+        new_content["axis"] = process_list(new_content["axis"], sort=not has_positions)
+    
+    # partners: 常にソートしてOK（相手馬）
+    if "partners" in new_content:
+        new_content["partners"] = process_list(new_content["partners"], sort=True)
+        
+    # selections: 各リストをソートしてOK（BOX, FORMATIONの各要素）
+    if "selections" in new_content:
+        new_content["selections"] = [process_list(s, sort=True) for s in new_content["selections"]]
+        
+    return new_content
+
 def _map_ticket_to_db_format(ticket_data, user_id):
     """パース済みデータをDBのticketsテーブルの形式に変換する"""
     raw = ticket_data["raw"]
     parsed = ticket_data["parsed"]
 
+    # 日付の正規化
+    normalized_date = _normalize_date(raw['race_date_str'])
+
     # race_id (YYYYMMDDPPRR) の生成
     place_code = RACE_COURSE_MAP.get(raw["race_place"], "00")
     race_no = raw["race_number_str"].zfill(2)
-    race_id = f"{raw['race_date_str']}{place_code}{race_no}"
+    race_id = f"{normalized_date}{place_code}{race_no}"
+
+    # コンテンツの正規化（馬番のゼロ埋めとソート）
+    normalized_content = _normalize_horse_numbers(parsed["content"])
 
     # receipt_unique_id (ハッシュ化) の生成
-    content_str = json.dumps(parsed["content"], sort_keys=True)
+    # 正規化されたコンテンツを使用してハッシュを生成することで、recent/past間の表記揺れを吸収する
+    content_str = json.dumps(normalized_content, sort_keys=True)
+    
     # 【修正】日付を含めて、日をまたいでもユニークな文字列を生成する
-    unique_str = f"{raw['race_date_str']}-{raw['receipt_no']}-{raw['line_no']}-{content_str}"
+    unique_str = f"{normalized_date}-{raw['receipt_no']}-{raw['line_no']}-{content_str}"
     receipt_unique_id = hashlib.md5(unique_str.encode()).hexdigest()
 
     # total_points の取得または計算
@@ -35,7 +83,7 @@ def _map_ticket_to_db_format(ticket_data, user_id):
         "race_id": race_id,
         "bet_type": parsed["bet_type"],
         "buy_type": parsed["buy_type"],
-        "content": parsed["content"],
+        "content": normalized_content, # DBには正規化されたデータを保存する
         "amount_per_point": parsed["amount_per_point"],
         "total_points": total_points,
         "total_cost": parsed["total_cost"],

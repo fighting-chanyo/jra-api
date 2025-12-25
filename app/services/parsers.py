@@ -85,10 +85,38 @@ def parse_jra_csv(csv_path):
                 elif "ながし" in shikibetsu_str:
                     method = "NAGASHI"
                     if "マルチ" in shikibetsu_str: multi = True
+                    
+                    # Parse positions
+                    if not multi:
+                        # Extract numbers before "着"
+                        match = re.search(r'([123１２３・]+)着', shikibetsu_str)
+                        if match:
+                            pos_str = match.group(1)
+                            for p in pos_str.split('・'):
+                                p = p.strip()
+                                if p.isdigit():
+                                    positions.append(int(p))
+                                elif p in ['１', '２', '３']:
+                                    positions.append(int(p.translate(str.maketrans('１２３', '123'))))
+
                     parts = kumiban_str.split('／')
-                    if len(parts) >= 2:
-                        axis = [x.strip() for x in parts[0].split('；') if x.strip()]
-                        partners = [x.strip() for x in parts[1].split('；') if x.strip()]
+                    
+                    # Logic for assigning axis/partners
+                    if len(parts) == 3 and positions and not multi:
+                        # 3-part format with fixed positions (e.g. 3連単1・3着ながし)
+                        # parts[0] -> 1st, parts[1] -> 2nd, parts[2] -> 3rd
+                        for i, part in enumerate(parts):
+                            horses = [x.strip() for x in part.split('；') if x.strip()]
+                            current_pos = i + 1
+                            if current_pos in positions:
+                                axis.extend(horses)
+                            else:
+                                partners.extend(horses)
+                    else:
+                        # Standard Axis / Partners format
+                        if len(parts) >= 2:
+                            axis = [x.strip() for x in parts[0].split('；') if x.strip()]
+                            partners = [x.strip() for x in parts[1].split('；') if x.strip()]
                 else:
                     selections = [re.findall(r'\d+', kumiban_str)]
 
@@ -200,21 +228,23 @@ def parse_past_detail_html(html_content):
                     nums = [p.get_text(strip=True) for p in block.select('.umabanBlock p')]
                     
                     if "軸" in prefix_text:
-                        axis_list.extend(nums)
-                        
-                        # 着順指定の解析 (マルチの場合は無視)
+                        current_positions = []
                         if not is_multi:
-                            pos_val = None
-                            if "1着" in prefix_text:
-                                pos_val = 1
-                            elif "2着" in prefix_text:
-                                pos_val = 2
-                            elif "3着" in prefix_text:
-                                pos_val = 3
-                            
-                            if pos_val is not None:
-                                # 軸馬の数だけ着順を追加
-                                positions_list.extend([pos_val] * len(nums))
+                            # Regex to find 1-3 (half or full width) followed by 着 or 頭目
+                            pos_match = re.search(r"([123１２３・]+)(?:着|頭目)", prefix_text)
+                            if pos_match:
+                                pos_str = pos_match.group(1)
+                                pos_map = {"1": 1, "2": 2, "3": 3, "１": 1, "２": 2, "３": 3}
+                                for char in pos_str:
+                                    if char in pos_map:
+                                        current_positions.append(pos_map[char])
+                        
+                        if not current_positions:
+                            axis_list.extend(nums)
+                        else:
+                            for pos in current_positions:
+                                axis_list.extend(nums)
+                                positions_list.extend([pos] * len(nums))
                     else:
                         partners_list.extend(nums)
                 

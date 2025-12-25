@@ -257,19 +257,26 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
                                 partners.extend(nums)
                             else:
                                 # "1着:", "軸:", "1頭目:" etc. treat as axis
-                                axis.extend(nums)
-
+                                
                                 # Parse position from prefix for Fixed Nagashi
+                                current_positions = []
                                 if not multi:
                                     # Regex to find 1-3 (half or full width) followed by 着 or 頭目
-                                    pos_match = re.search(r"([123１２３])(?:着|頭目)", p_text)
+                                    pos_match = re.search(r"([123１２３・]+)(?:着|頭目)", p_text)
                                     if pos_match:
-                                        pos_val = pos_match.group(1)
-                                        # Convert full-width to half-width
+                                        pos_str = pos_match.group(1)
                                         pos_map = {"1": 1, "2": 2, "3": 3, "１": 1, "２": 2, "３": 3}
-                                        pos = pos_map.get(pos_val, 0)
-                                        if pos > 0:
-                                            positions.extend([pos] * len(nums))
+                                        for char in pos_str:
+                                            if char in pos_map:
+                                                current_positions.append(pos_map[char])
+                                
+                                if not current_positions:
+                                    axis.extend(nums)
+                                else:
+                                    # If positions found, add axis and positions for each
+                                    for pos in current_positions:
+                                        axis.extend(nums)
+                                        positions.extend([pos] * len(nums))
                 elif method == "FORMATION":
                     # Formation usually lists selections for each position
                     for flex in flex_rows:

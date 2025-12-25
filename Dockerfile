@@ -14,10 +14,11 @@ RUN playwright install chromium
 # ソースコードをコピー
 COPY . .
 
-# ポート8000を開放
-EXPOSE 8000
+# ポート8080を開放 (Cloud Runのデフォルト)
+EXPOSE 8080
 
 # サーバー起動コマンド
-# host 0.0.0.0 は外部アクセスを受け付けるために必須
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# appフォルダの中にあるmain.pyを呼び出すため app.main:app に変更
+# ポートを8080に変更
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
 
