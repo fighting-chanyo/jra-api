@@ -1,15 +1,18 @@
 import os
 import re
 from datetime import datetime, timedelta
+import logging
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 from app.schemas import IpatAuth
 from app.services.parsers import parse_jra_csv
 from app.constants import BET_TYPE_MAP
 
+logger = logging.getLogger(__name__)
+
 def scrape_past_history_csv(creds: IpatAuth):
     """PlaywrightによるスクレイピングとCSVパース処理を担う (旧sync_past_history)"""
-    print("🚀 Accessing JRA Vote Inquiry (PC/CSV Mode)...")
+    logger.info("Accessing JRA Vote Inquiry (PC/CSV Mode)...")
     all_parsed_data = []
     
     with sync_playwright() as p:
@@ -27,7 +30,7 @@ def scrape_past_history_csv(creds: IpatAuth):
         page = context.new_page()
         page.on("dialog", lambda dialog: dialog.accept())
         
-        print("👉 Logging in to PC site...")
+        logger.info("Logging in to PC site...")
         page.goto("https://www.nvinq.jra.go.jp/jra/")
         
         # デバッグ用：ログインページ保存
@@ -54,7 +57,7 @@ def scrape_past_history_csv(creds: IpatAuth):
              with open("debug_login_failed.html", "w", encoding="utf-8") as f: f.write(page.content())
              raise Exception("Login Failed: Invalid Credentials (加入者番号・暗証番号・P-ARS番号に誤りがあります)")
 
-        print("👉 Navigating to Vote Inquiry (JRAWeb320)...")
+        logger.info("Navigating to Vote Inquiry (JRAWeb320)...")
         menu_btn = page.locator("tr:has-text('投票内容照会') input[type='submit']").first
         if not menu_btn.is_visible():
             menu_btn = page.locator("input[value='選択']").first
@@ -64,7 +67,7 @@ def scrape_past_history_csv(creds: IpatAuth):
         menu_btn.click()
         page.wait_for_load_state("networkidle")
 
-        print("👉 Navigating to Receipt Number List (JRAWeb020)...")
+        logger.info("Navigating to Receipt Number List (JRAWeb020)...")
         accept_link = page.locator("a.toAcceptnoNum")
         if accept_link.is_visible():
             accept_link.click()
@@ -89,14 +92,14 @@ def scrape_past_history_csv(creds: IpatAuth):
                 f.write(page.content())
             raise Exception(error_message)
 
-        print("👉 Checking Date List...")
+        logger.info("Checking Date List...")
         date_buttons = page.locator("input[value='選択']")
         date_count = date_buttons.count()
-        print(f"👀 Found {date_count} date buttons.")
+        logger.info("Found %d date buttons.", date_count)
 
         if date_count == 0:
             # エラーチェックは通過したがボタンがない場合
-            print("⚠️ No dates found. Maybe no betting history.")
+            logger.info("No dates found. Maybe no betting history.")
             return []
         # --- ここまで修正 ---
 
@@ -389,7 +392,7 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
 
 def scrape_recent_history(creds: IpatAuth):
     """Playwrightによるスクレイピング (Recent History Mode)"""
-    print("🚀 Accessing JRA IPAT (Recent History Mode)...")
+    logger.info("Accessing JRA IPAT (Recent History Mode)...")
     all_parsed_data = []
     
     with sync_playwright() as p:
@@ -404,7 +407,7 @@ def scrape_recent_history(creds: IpatAuth):
         page = context.new_page()
         
         # Step 1: Top Page (INET-ID)
-        print("👉 Logging in to IPAT (Step 1: INET-ID)...")
+        logger.info("Logging in to IPAT (Step 1: INET-ID)...")
         page.goto("https://www.ipat.jra.go.jp/")
         
         # Check for closed message
@@ -420,7 +423,7 @@ def scrape_recent_history(creds: IpatAuth):
             page.click("p.button a[title='ログイン']")
             
         # Step 2: Subscriber Info
-        print("👉 Logging in to IPAT (Step 2: Subscriber Info)...")
+        logger.info("Logging in to IPAT (Step 2: Subscriber Info)...")
         page.wait_for_selector("input[name='i']")
         page.fill("input[name='i']", creds.subscriber_number.strip())
         page.fill("input[name='p']", creds.password.strip())
@@ -429,7 +432,7 @@ def scrape_recent_history(creds: IpatAuth):
             page.click("a[title='ネット投票メニューへ']")
 
         # Step 3: Go to Vote History (Recent)
-        print("👉 Logging in to IPAT (Step 3: Vote History)...")
+        logger.info("Logging in to IPAT (Step 3: Vote History)...")
         page.wait_for_load_state("networkidle")
         history_btn_selector = "button.btn-reference"
         page.wait_for_selector(history_btn_selector)
@@ -437,7 +440,7 @@ def scrape_recent_history(creds: IpatAuth):
         page.wait_for_selector("h1:has-text('投票履歴一覧')")
 
         # Step 4: Iterate through Today and Yesterday
-        print("👉 Checking for history items (Today & Yesterday)...")
+        logger.info("Checking for history items (Today & Yesterday)...")
         
         target_days = [
             ("Today", "label[for='refer-today']", 0),
@@ -445,7 +448,7 @@ def scrape_recent_history(creds: IpatAuth):
         ]
         
         for day_name, selector, day_offset in target_days:
-            print(f"👉 Switching to {day_name}...")
+            logger.info("Switching to %s...", day_name)
             page.click(selector)
             
             try:
@@ -461,7 +464,7 @@ def scrape_recent_history(creds: IpatAuth):
             # Get number of receipts
             rows = page.locator("table.table-status tbody tr")
             count = rows.count()
-            print(f"👀 Found {count} history items for {day_name}.")
+            logger.info("Found %d history items for %s.", count, day_name)
             
             for i in range(count):
                 # Re-query rows to avoid stale elements
@@ -472,7 +475,7 @@ def scrape_recent_history(creds: IpatAuth):
                 try:
                     row_text = row.inner_text()
                     if "投票履歴がありません" in row_text:
-                        print(f"   ℹ️ No history found for {day_name}. Skipping.")
+                        logger.info("No history found for %s. Skipping.", day_name)
                         break
                 except:
                     pass
@@ -481,13 +484,14 @@ def scrape_recent_history(creds: IpatAuth):
                 try:
                     receipt_no = row.locator("td.receipt a").inner_text().strip()
                 except:
-                    print(f"⚠️ Could not extract receipt no for row {i}")
+                    logger.warning("Could not extract receipt no for row %d", i)
                     # Only print HTML if it's not the "No history" row (which we should have caught above, but just in case)
                     if "投票履歴がありません" not in row.inner_html():
-                        print(f"   Row HTML: {row.inner_html()}")
+                        html = row.inner_html()
+                        logger.debug("Row HTML (truncated): %s", html[:1000])
                     continue
 
-                print(f"   Processing Receipt: {receipt_no}")
+                logger.info("Processing Receipt: %s", receipt_no)
                 
                 # Click to open details
                 try:
@@ -495,7 +499,7 @@ def scrape_recent_history(creds: IpatAuth):
                     target_link.scroll_into_view_if_needed()
                     target_link.click()
                 except Exception as e:
-                    print(f"   ⚠️ Failed to click receipt {receipt_no}: {e}")
+                    logger.warning("Failed to click receipt %s: %s", receipt_no, e)
                     continue
 
                 # Wait for detail view
@@ -505,7 +509,7 @@ def scrape_recent_history(creds: IpatAuth):
                     page.wait_for_selector("h1:has-text('投票履歴結果内容'), table.table-result", timeout=10000)
                     is_detail_loaded = True
                 except:
-                    print(f"   ⚠️ Failed to load detail view for {receipt_no}. Attempting to recover...")
+                    logger.warning("Failed to load detail view for %s. Attempting to recover...", receipt_no)
                 
                 if is_detail_loaded:
                     # Parse Detail HTML
@@ -513,9 +517,9 @@ def scrape_recent_history(creds: IpatAuth):
                     try:
                         parsed = _parse_recent_detail_html(content, receipt_no, date_str)
                         all_parsed_data.extend(parsed)
-                        print(f"   ✅ Extracted {len(parsed)} tickets.")
+                        logger.info("Extracted %d tickets.", len(parsed))
                     except Exception as e:
-                        print(f"   ❌ Error parsing detail for {receipt_no}: {e}")
+                        logger.warning("Error parsing detail for %s: %s", receipt_no, e)
                 
                 # Go back to list (Always try to go back if we might have moved)
                 try:
@@ -534,7 +538,7 @@ def scrape_recent_history(creds: IpatAuth):
                 except:
                     # If we can't find the back button or list header, we might already be on the list or stuck
                     if "投票履歴一覧" not in page.content():
-                        print(f"   ⚠️ Could not confirm return to list for {receipt_no}. Reloading page...")
+                        logger.warning("Could not confirm return to list for %s. Reloading page...", receipt_no)
                         page.reload()
                         page.wait_for_selector("h1:has-text('投票履歴一覧')")
                 

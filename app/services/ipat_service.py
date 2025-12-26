@@ -1,9 +1,13 @@
 import hashlib
 import json
+import logging
+import time
 from app.schemas import IpatAuth
 from app.services.supabase_client import get_supabase_client
 from app.constants import RACE_COURSE_MAP
 from app.scrapers.jra_scraper import scrape_past_history_csv, scrape_recent_history
+
+logger = logging.getLogger(__name__)
 
 def _normalize_date(date_str):
     """日付文字列をYYYYMMDD形式に正規化する"""
@@ -98,7 +102,8 @@ def _map_ticket_to_db_format(ticket_data, user_id):
 def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
     """バックグラウンドで実行されるメインの処理フロー"""
     supabase = get_supabase_client()
-    print(f"BACKGROUND JOB STARTED for log_id: {log_id}")
+    started_at = time.monotonic()
+    logger.info("IPAT past sync started log_id=%s user_id=%s", log_id, user_id)
 
     try:
         # 1. スクレイピングとパース
@@ -109,7 +114,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
                 "status": "COMPLETED",
                 "message": "同期が完了しました。投票履歴は見つかりませんでした。"
             }).eq("id", log_id).execute()
-            print(f"✅ BACKGROUND JOB COMPLETED: No tickets found for log_id: {log_id}")
+            logger.info("IPAT past sync completed (no tickets) log_id=%s elapsed=%.1fs", log_id, time.monotonic() - started_at)
             return
 
         # 2. DB形式への変換
@@ -120,7 +125,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
         db_records = list(unique_records_map.values())
 
         # 3. DBへ保存 (Upsert)
-        print(f"   Upserting {len(db_records)} records to 'tickets' table...")
+        logger.info("Upserting %d tickets (past) log_id=%s", len(db_records), log_id)
         supabase.table("tickets").upsert(db_records, on_conflict="receipt_unique_id").execute()
 
         # --- 成功時のログ更新（既存の upsert の直後に置き換え） ---
@@ -135,11 +140,11 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
         update_data = getattr(res, "data", None) if hasattr(res, "data") else res.get("data") if isinstance(res, dict) else None
 
         if update_error:
-            print(f"⚠️ Failed to update sync_logs (error): {update_error}")
+            logger.warning("Failed to update sync_logs (past) log_id=%s error=%s", log_id, update_error)
         else:
             # data が空リストなら対象行が無かった可能性
             if not update_data:
-                print("⚠️ sync_logs row not found for update. Attempting to insert a new log record.")
+                logger.warning("sync_logs row not found for update (past). Attempting insert. log_id=%s", log_id)
                 # フォールバックで挿入（セキュリティに配慮して ipat_auth 等は含めない）
                 insert_payload = {
                     "id": log_id,
@@ -149,13 +154,18 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
                 ins_res = supabase.table("sync_logs").insert(insert_payload).execute()
                 ins_error = getattr(ins_res, "error", None) if hasattr(ins_res, "error") else ins_res.get("error") if isinstance(ins_res, dict) else None
                 if ins_error:
-                    print(f"❌ Failed to insert sync_logs fallback record: {ins_error}")
+                    logger.error("Failed to insert sync_logs fallback record (past) log_id=%s error=%s", log_id, ins_error)
                 else:
-                    print("✅ Inserted fallback sync_logs record.")
+                    logger.info("Inserted fallback sync_logs record (past) log_id=%s", log_id)
             else:
-                print("✅ sync_logs updated successfully.")
+                logger.info("sync_logs updated successfully (past) log_id=%s", log_id)
 
-        print(f"✅ BACKGROUND JOB COMPLETED for log_id: {log_id}")
+        logger.info(
+            "IPAT past sync completed log_id=%s tickets=%d elapsed=%.1fs",
+            log_id,
+            len(db_records),
+            time.monotonic() - started_at,
+        )
 
     except Exception as e:
         # エラーメッセージの翻訳
@@ -171,7 +181,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
         
         error_message = f"エラーが発生しました: {user_friendly_error}"
         
-        print(f"❌ BACKGROUND JOB FAILED for log_id: {log_id}. Error: {error_message}")
+        logger.exception("IPAT past sync failed log_id=%s error=%s", log_id, error_message)
         try:
             res = supabase.table("sync_logs").update({
                 "status": "ERROR",
@@ -180,7 +190,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
             err = getattr(res, "error", None) if hasattr(res, "error") else res.get("error") if isinstance(res, dict) else None
             data = getattr(res, "data", None) if hasattr(res, "data") else res.get("data") if isinstance(res, dict) else None
             if err:
-                print(f"⚠️ Failed to update sync_logs with ERROR status: {err}")
+                logger.warning("Failed to update sync_logs with ERROR status (past) log_id=%s err=%s", log_id, err)
                 # fallback insert
                 try:
                     supabase.table("sync_logs").insert({
@@ -188,26 +198,27 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
                         "status": "ERROR",
                         "message": error_message
                     }).execute()
-                    print("✅ Inserted fallback ERROR record into sync_logs.")
+                    logger.info("Inserted fallback ERROR record into sync_logs (past) log_id=%s", log_id)
                 except Exception as ins_e:
                     # 最終的にDB更新できなければローカルに保存（監査用）
                     fname = f"failed_sync_log_{log_id}.log"
                     with open(fname, "w", encoding="utf-8") as f:
                         f.write(f"Failed to update/insert sync_logs for log_id={log_id}\nError: {error_message}\nDB error: {ins_e}\n")
-                    print(f"❌ Also failed to insert fallback sync_log; dumped info to {fname}")
+                    logger.error("Also failed to insert fallback sync_log (past) log_id=%s dumped=%s", log_id, fname)
             elif not data:
-                print("⚠️ sync_logs update returned no data; row might not exist.")
+                logger.warning("sync_logs update returned no data (past) log_id=%s", log_id)
         except Exception as db_error:
-            print(f"  Additionally failed to update sync_logs: {db_error}")
+            logger.exception("Additionally failed to update sync_logs (past) log_id=%s", log_id)
             fname = f"failed_sync_log_{log_id}.log"
             with open(fname, "w", encoding="utf-8") as f:
                 f.write(f"Additionally failed to update sync_logs for log_id={log_id}\nError: {db_error}\nOriginal error: {error_message}\n")
-            print(f"❌ Wrote debug log to {fname}")
+            logger.error("Wrote debug log to %s (past) log_id=%s", fname, log_id)
 
 def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
     """バックグラウンドで実行される直近履歴同期の処理フロー"""
     supabase = get_supabase_client()
-    print(f"BACKGROUND JOB STARTED (RECENT) for log_id: {log_id}")
+    started_at = time.monotonic()
+    logger.info("IPAT recent sync started log_id=%s user_id=%s", log_id, user_id)
 
     try:
         # 1. スクレイピングとパース
@@ -227,11 +238,11 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
                 "message": "同期が完了しました。直近の投票履歴は見つかりませんでした。"
             }
             supabase.table("sync_logs").update(update_payload).eq("id", log_id).execute()
-            print(f"✅ BACKGROUND JOB COMPLETED: No tickets found for log_id: {log_id}")
+            logger.info("IPAT recent sync completed (no tickets) log_id=%s elapsed=%.1fs", log_id, time.monotonic() - started_at)
             return
 
         # 3. DBへ保存 (Upsert)
-        print(f"   Upserting {len(db_records)} records to 'tickets' table...")
+        logger.info("Upserting %d tickets (recent) log_id=%s", len(db_records), log_id)
         supabase.table("tickets").upsert(db_records, on_conflict="receipt_unique_id").execute()
 
         # --- 即時判定処理 (結果確定済みのレースがあれば判定) ---
@@ -242,7 +253,7 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
                 race_service = RaceService()
                 race_service.judge_existing_races(race_ids)
         except Exception as e:
-            print(f"⚠️ Error during immediate judgment: {e}")
+            logger.warning("Error during immediate judgment (recent) log_id=%s: %s", log_id, e)
             # 判定エラーでも同期自体は成功とみなして続行する
 
         # --- 成功時のログ更新 ---
@@ -255,9 +266,14 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
         # 成功確認のログ出力
         update_data = getattr(res, "data", None) if hasattr(res, "data") else res.get("data") if isinstance(res, dict) else None
         if not update_data:
-            print(f"⚠️ sync_logs row not found for update (log_id: {log_id}).")
+            logger.warning("sync_logs row not found for update (recent) log_id=%s", log_id)
         
-        print(f"✅ BACKGROUND JOB COMPLETED for log_id: {log_id}")
+        logger.info(
+            "IPAT recent sync completed log_id=%s tickets=%d elapsed=%.1fs",
+            log_id,
+            len(db_records),
+            time.monotonic() - started_at,
+        )
 
     except Exception as e:
         # エラーメッセージの翻訳
@@ -274,7 +290,7 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
             user_friendly_error = "JRA ネット投票ページは現在クローズしています。"
         
         error_message = f"エラーが発生しました: {user_friendly_error}"
-        print(f"❌ BACKGROUND JOB FAILED for log_id: {log_id}. Error: {error_message}")
+        logger.exception("IPAT recent sync failed log_id=%s error=%s", log_id, error_message)
         
         try:
             res = supabase.table("sync_logs").update({
@@ -293,11 +309,11 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
                     "message": error_message
                 }).execute()
         except Exception as db_error:
-            print(f"  Additionally failed to update sync_logs: {db_error}")
+            logger.exception("Additionally failed to update sync_logs (recent) log_id=%s", log_id)
             fname = f"failed_sync_log_{log_id}.log"
             with open(fname, "w", encoding="utf-8") as f:
                 f.write(f"Failed to update sync_logs for log_id={log_id}\nError: {db_error}\nOriginal error: {error_message}\n")
-            print(f"❌ Wrote debug log to {fname}")
+            logger.error("Wrote debug log to %s (recent) log_id=%s", fname, log_id)
 
 
 

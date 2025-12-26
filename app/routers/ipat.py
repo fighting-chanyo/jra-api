@@ -2,12 +2,15 @@ from fastapi import APIRouter, BackgroundTasks, status
 from fastapi.responses import JSONResponse
 from app.schemas import SyncIpatRequest
 from app.services.ipat_service import sync_and_save_past_history, sync_and_save_recent_history
+import logging
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
+
 @router.post("/sync/ipat")
 def start_sync_ipat_data(req: SyncIpatRequest, background_tasks: BackgroundTasks):
-    print(f"🔄 Sync request received for log_id: {req.log_id}, mode: {req.mode}")
+    logger.info("Scheduled ipat sync log_id=%s mode=%s", req.log_id, req.mode)
     
     if req.mode == "recent":
         background_tasks.add_task(

@@ -116,6 +116,7 @@ class RaceService:
         """
         target_date = target_date or date.today()
 
+        started_at = time.monotonic()
         logger.info("Starting result update process for target_date=%s", target_date)
         
         # 1. DBから当日のレースを取得
@@ -128,13 +129,23 @@ class RaceService:
             logger.info("No races found for %s", target_date)
             return {"processed": 0, "hits": 0}
 
-        processed_count = 0
+        logger.info("Loaded %d races from DB for %s", len(races), target_date)
+
+        processed_count = 0  # DBを更新したレース数
         total_hits = 0
+        checked_count = 0
+        skipped_future_count = 0
+        skipped_no_external_id_count = 0
+        scrape_attempt_count = 0
+        scrape_not_finalized_count = 0
+        scrape_error_or_empty_count = 0
+        used_db_result_count = 0
         
         # 現在時刻をUTCで取得
         now_utc = datetime.now(timezone.utc)
 
         for race in races:
+            checked_count += 1
             # 発走時刻チェック
             if race.get("post_time"):
                 try:
@@ -150,7 +161,7 @@ class RaceService:
                     # 現在時刻と比較 (発走時刻 > 現在時刻 ならスキップ)
                     # ただし、既にFINISHEDの場合は結果があるのでスキップしない
                     if race.get("status") != "FINISHED" and post_time > now_utc:
-                        # print(f"   Skipping Race {race['id']}: Post time {post_time} is in the future (Now: {now_utc})")
+                        skipped_future_count += 1
                         continue
                         
                 except ValueError as e:
@@ -159,6 +170,7 @@ class RaceService:
 
             external_id = race.get("external_id")
             if not external_id:
+                skipped_no_external_id_count += 1
                 continue
 
             # 既にFINISHEDかどうか確認
@@ -176,13 +188,20 @@ class RaceService:
                 # データが不完全なら再取得を試みる
                 if not (result_data["result_1st"] and result_data["payout_data"]):
                      is_finished = False 
+                else:
+                    used_db_result_count += 1
 
             if not is_finished:
                 # 2. 結果スクレイピング
+                scrape_attempt_count += 1
                 result_data = self.scraper.scrape_race_result(external_id)
                 if not result_data:
-                    # print("      -> Not finalized yet.")
+                    scrape_not_finalized_count += 1
                     continue
+
+                # 取得はできたが空（想定外）をカウント
+                if not (result_data.get("result_1st") and result_data.get("payout_data") is not None):
+                    scrape_error_or_empty_count += 1
 
                 # 3. DB更新 (Races)
                 update_payload = {
@@ -205,10 +224,22 @@ class RaceService:
                 hits = self._process_hit_detection(race["id"], result_data)
                 total_hits += hits
 
+        elapsed_sec = time.monotonic() - started_at
         logger.info(
-            "Result update process completed. Processed: %d, Hits: %d",
+            "Result update completed for %s. Checked=%d, Updated=%d, Hits=%d, "
+            "SkippedFuture=%d, SkippedNoExternalId=%d, UsedDbResult=%d, "
+            "ScrapeAttempts=%d, NotFinalized=%d, EmptyOrError=%d, Elapsed=%.1fs",
+            target_date,
+            checked_count,
             processed_count,
             total_hits,
+            skipped_future_count,
+            skipped_no_external_id_count,
+            used_db_result_count,
+            scrape_attempt_count,
+            scrape_not_finalized_count,
+            scrape_error_or_empty_count,
+            elapsed_sec,
         )
         return {"processed": processed_count, "hits": total_hits}
 

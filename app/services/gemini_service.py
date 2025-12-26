@@ -7,29 +7,28 @@ from typing import List, Optional
 import base64
 import logging
 
-# ロギングの設定
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class GeminiService:
     def __init__(self):
         api_key = os.environ.get("GOOGLE_API_KEY")
         if not api_key:
-            logging.warning("Warning: GOOGLE_API_KEY not found in environment variables.")
+            logger.warning("GOOGLE_API_KEY not found in environment variables.")
             self.client = None
         else:
-            logging.info("GOOGLE_API_KEY found. Initializing Gemini client.")
+            logger.info("GOOGLE_API_KEY found. Initializing Gemini client.")
             self.client = genai.Client(api_key=api_key)
         
         # Using gemini-1.5-flash as default, but can be configured
         self.model_name = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
-        logging.info(f"Using Gemini model: {self.model_name}")
+        logger.info("Using Gemini model: %s", self.model_name)
 
     async def analyze_image(self, image_bytes: bytes) -> Optional[AnalysisResult]:
-        logging.info("Starting image analysis.")
+        logger.info("Starting image analysis.")
         if not self.client:
-             logging.error("Gemini client is not initialized.")
-             return None
+            logger.error("Gemini client is not initialized.")
+            return None
 
         from datetime import datetime
         today = datetime.now().strftime("%Y-%m-%d")

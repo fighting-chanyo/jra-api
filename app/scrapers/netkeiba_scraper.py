@@ -23,9 +23,12 @@ class NetkeibaScraper:
         if os.getenv("NETKEIBA_CHECK_IP", "0") == "1":
             try:
                 ip_resp = self.session.get("https://api.ipify.org", timeout=5)
-                print(f"INFO: Current Public IP: {ip_resp.text}")
+                logger.info("Current Public IP: %s", ip_resp.text)
             except Exception as e:
-                print(f"WARNING: Failed to check public IP: {e}")
+                logger.warning("Failed to check public IP: %s", e)
+
+    def _sleep_with_jitter(self, min_sec: float, max_sec: float) -> None:
+        time.sleep(random.uniform(min_sec, max_sec))
 
     def _init_session(self) -> None:
         self.session = requests.Session()
@@ -55,7 +58,7 @@ class NetkeibaScraper:
         timeout_read = float(os.getenv("NETKEIBA_TIMEOUT_READ_SEC", "30.0"))
 
         # 1回目も軽くジッター（機械的な周期を避ける）
-        time.sleep(random.uniform(0.5, 1.5))
+        self._sleep_with_jitter(0.5, 1.5)
 
         last_error: Optional[Exception] = None
         for attempt in range(1, max_attempts + 1):
@@ -75,16 +78,28 @@ class NetkeibaScraper:
             except requests.exceptions.SSLError as e:
                 # Cloud Run等でSSLEOFErrorが出る場合、接続プールをリセットして再試行
                 last_error = e
-                print(f"WARNING: SSL error fetching {url} (attempt {attempt}/{max_attempts}): {e}")
+                logger.warning(
+                    "SSL error fetching %s (attempt %d/%d): %s",
+                    url,
+                    attempt,
+                    max_attempts,
+                    e,
+                )
                 self._init_session()
 
             except (requests.exceptions.ConnectionError, requests.HTTPError) as e:
                 last_error = e
-                print(f"WARNING: Retryable error fetching {url} (attempt {attempt}/{max_attempts}): {e}")
+                logger.warning(
+                    "Retryable error fetching %s (attempt %d/%d): %s",
+                    url,
+                    attempt,
+                    max_attempts,
+                    e,
+                )
 
             except requests.exceptions.RequestException as e:
                 # その他は基本再試行しない（タイムアウト等は上のConnectionErrorに入ることが多い）
-                print(f"ERROR: Failed to fetch {url}. Reason: {e}")
+                logger.error("Failed to fetch %s. Reason: %s", url, e)
                 return None
 
             if attempt < max_attempts:
@@ -92,7 +107,71 @@ class NetkeibaScraper:
                 jitter = random.uniform(0.0, 1.0)
                 time.sleep(min(backoff + jitter, 60.0))
 
-        print(f"ERROR: Failed to fetch {url} after {max_attempts} attempts. Last error: {last_error}")
+        logger.error(
+            "Failed to fetch %s after %d attempts. Last error: %s",
+            url,
+            max_attempts,
+            last_error,
+        )
+        return None
+
+    def _get_content(self, url: str) -> Optional[bytes]:
+        """_get_html と同じリトライ/バックオフでレスポンスバイト列を取得する。"""
+        max_attempts = int(os.getenv("NETKEIBA_MAX_ATTEMPTS", "5"))
+        base_sleep = float(os.getenv("NETKEIBA_BASE_SLEEP_SEC", "1.0"))
+        timeout_connect = float(os.getenv("NETKEIBA_TIMEOUT_CONNECT_SEC", "5.0"))
+        timeout_read = float(os.getenv("NETKEIBA_TIMEOUT_READ_SEC", "30.0"))
+
+        self._sleep_with_jitter(0.5, 1.5)
+
+        last_error: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                resp = self.session.get(url, timeout=(timeout_connect, timeout_read))
+
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    last_error = requests.HTTPError(f"HTTP {resp.status_code}")
+                    raise requests.HTTPError(f"HTTP {resp.status_code}")
+
+                resp.raise_for_status()
+                return resp.content
+
+            except requests.exceptions.SSLError as e:
+                last_error = e
+                logger.warning(
+                    "SSL error fetching %s (attempt %d/%d): %s",
+                    url,
+                    attempt,
+                    max_attempts,
+                    e,
+                )
+                self._init_session()
+
+            except (requests.exceptions.ConnectionError, requests.HTTPError) as e:
+                last_error = e
+                logger.warning(
+                    "Retryable error fetching %s (attempt %d/%d): %s",
+                    url,
+                    attempt,
+                    max_attempts,
+                    e,
+                )
+
+            except requests.exceptions.RequestException as e:
+                logger.error("Failed to fetch %s. Reason: %s", url, e)
+                return None
+
+            if attempt < max_attempts:
+                backoff = base_sleep * (2 ** (attempt - 1))
+                jitter = random.uniform(0.0, 1.0)
+                time.sleep(min(backoff + jitter, 60.0))
+
+        logger.error(
+            "Failed to fetch %s after %d attempts. Last error: %s",
+            url,
+            max_attempts,
+            last_error,
+        )
         return None
 
     def scrape_monthly_schedule(self, year: int, month: int):
@@ -178,7 +257,7 @@ class NetkeibaScraper:
 
         all_races = []
         for date_str in race_dates:
-            print(f"Fetching race list for {date_str}...")
+            logger.info("Fetching race list for %s...", date_str)
             races = prefetched_races.get(date_str)
             if races is None:
                 races = self._scrape_race_list(date_str)
@@ -196,7 +275,7 @@ class NetkeibaScraper:
         
         html_content = self._get_html(url, encoding='utf-8')
         if not html_content:
-            print(f"ERROR: Failed to fetch race list for {date_str}.")
+            logger.error("Failed to fetch race list for %s.", date_str)
             return []
 
         if "race_id=" not in html_content:
@@ -246,7 +325,7 @@ class NetkeibaScraper:
                     "external_id": external_id
                 })
             except Exception as e:
-                print(f"Error parsing race item: {e}")
+                logger.warning("Error parsing race item: %s", e)
                 continue
                 
         return races
@@ -256,33 +335,28 @@ class NetkeibaScraper:
         レース結果と払戻金を取得する
         """
         url = f"{self.BASE_URL}/race/result.html?race_id={external_id}"
-        
-        # _get_html を使うように変更（共通のリトライ・ジッターロジックを利用）
-        # ただしエンコーディング処理が特殊なので、ここでは直接sessionを使うか、_get_htmlを拡張する
-        # 今回は既存ロジックを生かすため、ここでも sleep を入れて session.get を呼ぶ
-        
-        time.sleep(random.uniform(1.0, 3.0))
-        
+
         try:
-            resp = self.session.get(url, timeout=(5.0, 30.0))
-            resp.raise_for_status()
-            
+            content = self._get_content(url)
+            if not content:
+                return None
+
             try:
-                html_content = resp.content.decode('utf-8')
+                html_content = content.decode('utf-8')
             except UnicodeDecodeError:
-                html_content = resp.content.decode('euc-jp', errors='replace')
+                html_content = content.decode('euc-jp', errors='replace')
 
             soup = BeautifulSoup(html_content, 'html.parser')
 
             # --- 1. 着順の取得 ---
             result_table = soup.find("table", class_="RaceTable01")
             if not result_table:
-                print(f"   -> Result table not found for {external_id}.")
+                logger.info("Result table not found for %s (not finalized yet?)", external_id)
                 return None
 
             rows = result_table.find_all("tr", class_=re.compile("HorseList"))
             if len(rows) < 3:
-                print(f"   -> Not enough result rows found for {external_id}.")
+                logger.info("Not enough result rows found for %s (not finalized yet?)", external_id)
                 return None
             
             try:
@@ -290,7 +364,7 @@ class NetkeibaScraper:
                 result_2nd = rows[1].select_one("td.Result_Num + td + td div").text.strip()
                 result_3rd = rows[2].select_one("td.Result_Num + td + td div").text.strip()
             except (AttributeError, IndexError):
-                print(f"   -> Could not parse 1st-3rd place horse numbers for {external_id}")
+                logger.warning("Could not parse 1st-3rd place horse numbers for %s", external_id)
                 return None
             
             # --- 2. 払戻金の取得 ---
@@ -379,10 +453,8 @@ class NetkeibaScraper:
             }
 
         except requests.exceptions.RequestException as e:
-            print(f"ERROR scraping result for {external_id} (Request failed): {e}")
+            logger.warning("Error scraping result for %s (Request failed): %s", external_id, e)
             return None
         except Exception as e:
-            print(f"ERROR scraping result for {external_id}: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Error scraping result for %s", external_id)
             return None

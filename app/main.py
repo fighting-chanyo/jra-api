@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from app.routers import ipat, races, analysis, debug
+from app.logging_config import configure_logging
+
+configure_logging()
 
 app = FastAPI()
 

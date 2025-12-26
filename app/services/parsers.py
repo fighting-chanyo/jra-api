@@ -1,8 +1,11 @@
 import csv
 import io
 import re
+import logging
 from bs4 import BeautifulSoup
 from app.constants import BET_TYPE_MAP
+
+logger = logging.getLogger(__name__)
 
 def parse_jra_csv(csv_path):
     results = []
@@ -20,7 +23,7 @@ def parse_jra_csv(csv_path):
                 break
         
         if header_index == -1:
-            print("      ⚠️ CSV Header not found.")
+            logger.warning("CSV Header not found")
             return []
 
         # ヘッダーとデータ行を分割
@@ -28,7 +31,7 @@ def parse_jra_csv(csv_path):
         data_rows = all_rows[header_index + 1:]
         
         col_map = {name: i for i, name in enumerate(header)}
-        print(f"      👀 CSV Header Mapped: {col_map.keys()}")
+        logger.info("CSV Header mapped: %s", list(col_map.keys()))
 
         for row in data_rows:
             # 【修正】行のいずれかのセルに「合計」が含まれていたらスキップする
@@ -152,10 +155,10 @@ def parse_jra_csv(csv_path):
                 }
                 results.append(ticket_data)
             except (IndexError, KeyError, ValueError) as e:
-                print(f"      ⚠️ CSV Row Parse Error: {e} | Row: {row}")
+                logger.warning("CSV Row Parse Error: %s | Row: %s", e, row)
 
     except Exception as e:
-        print(f"      ❌ CSV Parse Error: {e}")
+        logger.exception("CSV Parse Error")
         
     return results
 
