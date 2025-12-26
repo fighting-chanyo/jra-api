@@ -556,6 +556,7 @@ def scrape_recent_history(creds: IpatAuth):
                 page.fill("input[name='i']", creds.subscriber_number.strip())
                 page.fill("input[name='p']", creds.password.strip())
                 page.fill("input[name='r']", creds.pars_number.strip())
+                before_url = page.url
                 # NOTE: modern側はSPA的な遷移で「navigation」が発生しない場合がある。
                 # expect_navigationで待つとハングすることがあるため、画面要素の出現で待機する。
                 menu_link = page.locator("a[title='ネット投票メニューへ']")
@@ -582,6 +583,27 @@ def scrape_recent_history(creds: IpatAuth):
                     page.wait_for_load_state("networkidle", timeout=10000)
                 except Exception:
                     pass
+
+                # まだ加入者入力画面のままなら、フォームsubmitも試す（リンク/JSが効かないケース向け）
+                try:
+                    still_on_subscriber = (
+                        "pw_080_i.cgi" in (page.url or "")
+                        and page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0
+                    )
+                except Exception:
+                    still_on_subscriber = False
+
+                if still_on_subscriber:
+                    logger.warning(
+                        "Still on subscriber page after menu action. url(before)='%s' url(after)='%s' - trying form submit.",
+                        before_url,
+                        getattr(page, "url", None),
+                    )
+                    try:
+                        # 入力欄の属するformをsubmitする
+                        page.eval_on_selector("input[name='r']", "el => el.form && el.form.submit()")
+                    except Exception as e:
+                        logger.warning("Form submit fallback failed: %s", e)
 
                 # メニュー画面に到達したことを、複合条件で判定
                 # - URLが変わる
