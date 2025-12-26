@@ -2,6 +2,8 @@ import os
 import re
 from datetime import datetime, timedelta
 import logging
+import threading
+from contextlib import contextmanager
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 from app.schemas import IpatAuth
@@ -10,136 +12,192 @@ from app.constants import BET_TYPE_MAP
 
 logger = logging.getLogger(__name__)
 
+
+_PLAYWRIGHT_MAX_CONCURRENCY = int(os.getenv("PLAYWRIGHT_MAX_CONCURRENCY", "1") or "1")
+_PLAYWRIGHT_SLOT_TIMEOUT_SEC = float(os.getenv("PLAYWRIGHT_SLOT_TIMEOUT_SEC", "30") or "30")
+_PLAYWRIGHT_SEMAPHORE = threading.BoundedSemaphore(_PLAYWRIGHT_MAX_CONCURRENCY)
+
+
+@contextmanager
+def _playwright_slot():
+    acquired = _PLAYWRIGHT_SEMAPHORE.acquire(timeout=_PLAYWRIGHT_SLOT_TIMEOUT_SEC)
+    if not acquired:
+        raise Exception(
+            "Playwright is busy (too many concurrent sessions in this instance). "
+            "Please retry in a moment."
+        )
+    try:
+        yield
+    finally:
+        _PLAYWRIGHT_SEMAPHORE.release()
+
+
+def _route_block_heavy_assets(route):
+    try:
+        req = route.request
+        if req.resource_type in ("image", "media", "font"):
+            route.abort()
+            return
+        url = (req.url or "").lower()
+        if url.endswith(
+            (
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".webp",
+                ".svg",
+                ".woff",
+                ".woff2",
+                ".ttf",
+                ".otf",
+                ".css",
+                ".mp4",
+                ".webm",
+                ".mp3",
+                ".m4a",
+                ".ogg",
+            )
+        ):
+            route.abort()
+            return
+        route.continue_()
+    except Exception:
+        # ルーティング処理で例外を投げるとナビゲーションが不安定になるため握りつぶす
+        try:
+            route.continue_()
+        except Exception:
+            pass
+
 def scrape_past_history_csv(creds: IpatAuth):
     """PlaywrightによるスクレイピングとCSVパース処理を担う (旧sync_past_history)"""
     logger.info("Accessing JRA Vote Inquiry (PC/CSV Mode)...")
     all_parsed_data = []
-    
-    with sync_playwright() as p:
-        is_headless = os.getenv("HEADLESS", "true").lower() != "false"
-        browser = p.chromium.launch(
-            headless=is_headless,
-            args=["--disable-cache", "--disk-cache-size=0"]
-        )
-        # User-Agentを設定して、一般的なブラウザからのアクセスに見せかける
-        context = browser.new_context(
-            accept_downloads=True,
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-        context.route("**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,css}", lambda route: route.abort())
-        page = context.new_page()
-        page.on("dialog", lambda dialog: dialog.accept())
-        
-        logger.info("Logging in to PC site...")
-        page.goto("https://www.nvinq.jra.go.jp/jra/")
-        
-        # デバッグ用：ログインページ保存
-        with open("debug_login_page.html", "w", encoding="utf-8") as f: f.write(page.content())
 
-        # 入力値をクリーニング（前後の空白削除）
-        s_no = creds.subscriber_number.strip()
-        pwd = creds.password.strip()
-        pars = creds.pars_number.strip()
+    with _playwright_slot():
+        with sync_playwright() as p:
+            is_headless = os.getenv("HEADLESS", "true").lower() != "false"
+            browser = p.chromium.launch(
+                headless=is_headless,
+                args=[
+                    "--disable-cache",
+                    "--disk-cache-size=0",
+                    "--disable-dev-shm-usage",
+                    "--no-sandbox",
+                ],
+            )
+            context = browser.new_context(
+                accept_downloads=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            context.route("**/*", _route_block_heavy_assets)
+            page = context.new_page()
+            page.on("dialog", lambda dialog: dialog.accept())
 
-        page.wait_for_selector("#UID")
-        page.locator("#UID").fill(s_no)
-        page.wait_for_timeout(500)
-        # ユーザー指摘により入れ替え: 暗証番号欄にP-ARS、P-ARS欄に暗証番号を入力
-        page.locator("#PWD").fill(pars)
-        page.wait_for_timeout(500)
-        page.locator("#PARS").fill(pwd)
-        page.wait_for_timeout(500)
-        page.locator("input[type='submit'][value='ログイン']").click()
-        page.wait_for_load_state("networkidle")
-
-        # エラーメッセージチェック
-        if page.locator("text=加入者番号・暗証番号・P-ARS番号に誤りがあります").is_visible():
-             with open("debug_login_failed.html", "w", encoding="utf-8") as f: f.write(page.content())
-             raise Exception("Login Failed: Invalid Credentials (加入者番号・暗証番号・P-ARS番号に誤りがあります)")
-
-        logger.info("Navigating to Vote Inquiry (JRAWeb320)...")
-        menu_btn = page.locator("tr:has-text('投票内容照会') input[type='submit']").first
-        if not menu_btn.is_visible():
-            menu_btn = page.locator("input[value='選択']").first
-        if not menu_btn.is_visible():
-            with open("debug_login_failed.html", "w", encoding="utf-8") as f: f.write(page.content())
-            raise Exception("Login Failed or Menu Changed. See debug_login_failed.html")
-        menu_btn.click()
-        page.wait_for_load_state("networkidle")
-
-        logger.info("Navigating to Receipt Number List (JRAWeb020)...")
-        accept_link = page.locator("a.toAcceptnoNum")
-        if accept_link.is_visible():
-            # aタグクリックが内部でPOST送信する実装の場合、確実に遷移完了を待つ
-            with page.expect_navigation(wait_until="domcontentloaded"):
-                accept_link.click()
-        else:
-            # JS submit は Playwright が自動でナビゲーション待機しないため、明示的に待つ
-            with page.expect_navigation(wait_until="domcontentloaded"):
-                page.evaluate("document.forms['Go020'].submit()")
-        
-        # ページ遷移を待機し、まずセッションエラーの可能性をチェックする
-        try:
-            # 追加の読み込みを待つ（SPAではないが、稀に遅延するため）
-            page.wait_for_load_state("domcontentloaded", timeout=15000)
-            # 「日付選択」ページに到達していることを確認
-            page.locator("h2:has-text('日付選択')").wait_for(timeout=15000)
-
-            # セッション切れ画面の特有のテキストが存在するかどうかで判定
-            if page.locator("text=ログインが無効となったか").is_visible():
-                raise Exception("Session timed out or became invalid. Please try again.")
-
-        except Exception as e:
-            # is_visible()のタイムアウトや、独自にraiseした例外を捕捉
-            error_message = str(e) if str(e) else "Failed to determine page state after navigation."
-            # デバッグ用に最終的な画面を保存
-            with open("debug_navigation_error.html", "w", encoding="utf-8") as f:
-                f.write(page.content())
-            raise Exception(error_message)
-
-        logger.info("Checking Date List...")
-        # 日付選択ページの「選択」ボタン（表の中）に限定して拾う
-        date_buttons = page.locator("table[border='1'] input[type='submit'][value='選択']")
-        if date_buttons.count() == 0:
-            # フォールバック（ページ構造変更/属性差異に備える）
-            date_buttons = page.locator("input[type='submit'][value='選択']")
-        date_count = date_buttons.count()
-        logger.info("Found %d date buttons.", date_count)
-
-        if date_count == 0:
-            # エラーチェックは通過したがボタンがない場合：原因切り分け用に画面を保存
             try:
-                logger.info("No dates found. title='%s' url='%s'", page.title(), page.url)
-            except Exception:
-                logger.info("No dates found. (failed to read title/url)")
-            with open("debug_date_list_missing.html", "w", encoding="utf-8") as f:
-                f.write(page.content())
-            logger.info("No dates found. Maybe no betting history or unexpected page. See debug_date_list_missing.html")
-            return []
+                logger.info("Logging in to PC site...")
+                page.goto("https://www.nvinq.jra.go.jp/jra/")
 
+                with open("debug_login_page.html", "w", encoding="utf-8") as f:
+                    f.write(page.content())
 
-        for i in range(date_count):
-            date_buttons.nth(i).click()
-            page.wait_for_load_state("networkidle")
-            csv_btn = page.locator("form[action*='JRACSVDownload'] input[name='normal']")
-            if csv_btn.is_visible():
-                with page.expect_download() as download_info:
-                    csv_btn.click()
-                download = download_info.value
-                csv_path = f"temp_history_{i}.csv"
-                download.save_as(csv_path)
-                parsed = parse_jra_csv(csv_path)
-                all_parsed_data.extend(parsed)
-                os.remove(csv_path)
-            
-            back_btn = page.locator("input[value*='日付選択']").first
-            if back_btn.is_visible():
-                back_btn.click()
-            else:
-                page.go_back()
-            page.wait_for_load_state("networkidle")
+                s_no = creds.subscriber_number.strip()
+                pwd = creds.password.strip()
+                pars = creds.pars_number.strip()
 
-        browser.close()
+                page.wait_for_selector("#UID")
+                page.locator("#UID").fill(s_no)
+                page.wait_for_timeout(500)
+                page.locator("#PWD").fill(pars)
+                page.wait_for_timeout(500)
+                page.locator("#PARS").fill(pwd)
+                page.wait_for_timeout(500)
+                page.locator("input[type='submit'][value='ログイン']").click()
+                page.wait_for_load_state("networkidle")
+
+                if page.locator("text=加入者番号・暗証番号・P-ARS番号に誤りがあります").is_visible():
+                    with open("debug_login_failed.html", "w", encoding="utf-8") as f:
+                        f.write(page.content())
+                    raise Exception(
+                        "Login Failed: Invalid Credentials (加入者番号・暗証番号・P-ARS番号に誤りがあります)"
+                    )
+
+                logger.info("Navigating to Vote Inquiry (JRAWeb320)...")
+                menu_btn = page.locator("tr:has-text('投票内容照会') input[type='submit']").first
+                if not menu_btn.is_visible():
+                    menu_btn = page.locator("input[value='選択']").first
+                if not menu_btn.is_visible():
+                    with open("debug_login_failed.html", "w", encoding="utf-8") as f:
+                        f.write(page.content())
+                    raise Exception("Login Failed or Menu Changed. See debug_login_failed.html")
+                menu_btn.click()
+                page.wait_for_load_state("networkidle")
+
+                logger.info("Navigating to Receipt Number List (JRAWeb020)...")
+                accept_link = page.locator("a.toAcceptnoNum")
+                if accept_link.is_visible():
+                    with page.expect_navigation(wait_until="domcontentloaded"):
+                        accept_link.click()
+                else:
+                    with page.expect_navigation(wait_until="domcontentloaded"):
+                        page.evaluate("document.forms['Go020'].submit()")
+
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    page.locator("h2:has-text('日付選択')").wait_for(timeout=15000)
+                    if page.locator("text=ログインが無効となったか").is_visible():
+                        raise Exception("Session timed out or became invalid. Please try again.")
+                except Exception as e:
+                    error_message = str(e) if str(e) else "Failed to determine page state after navigation."
+                    with open("debug_navigation_error.html", "w", encoding="utf-8") as f:
+                        f.write(page.content())
+                    raise Exception(error_message)
+
+                logger.info("Checking Date List...")
+                date_buttons = page.locator("table[border='1'] input[type='submit'][value='選択']")
+                if date_buttons.count() == 0:
+                    date_buttons = page.locator("input[type='submit'][value='選択']")
+                date_count = date_buttons.count()
+                logger.info("Found %d date buttons.", date_count)
+
+                if date_count == 0:
+                    try:
+                        logger.info("No dates found. title='%s' url='%s'", page.title(), page.url)
+                    except Exception:
+                        logger.info("No dates found. (failed to read title/url)")
+                    with open("debug_date_list_missing.html", "w", encoding="utf-8") as f:
+                        f.write(page.content())
+                    logger.info(
+                        "No dates found. Maybe no betting history or unexpected page. See debug_date_list_missing.html"
+                    )
+                    return []
+
+                for i in range(date_count):
+                    date_buttons.nth(i).click()
+                    page.wait_for_load_state("networkidle")
+                    csv_btn = page.locator("form[action*='JRACSVDownload'] input[name='normal']")
+                    if csv_btn.is_visible():
+                        with page.expect_download() as download_info:
+                            csv_btn.click()
+                        download = download_info.value
+                        csv_path = f"temp_history_{i}.csv"
+                        download.save_as(csv_path)
+                        parsed = parse_jra_csv(csv_path)
+                        all_parsed_data.extend(parsed)
+                        os.remove(csv_path)
+
+                    back_btn = page.locator("input[value*='日付選択']").first
+                    if back_btn.is_visible():
+                        back_btn.click()
+                    else:
+                        page.go_back()
+                    page.wait_for_load_state("networkidle")
+
+            finally:
+                try:
+                    context.close()
+                finally:
+                    browser.close()
 
     return all_parsed_data
 
@@ -409,154 +467,151 @@ def scrape_recent_history(creds: IpatAuth):
     """Playwrightによるスクレイピング (Recent History Mode)"""
     logger.info("Accessing JRA IPAT (Recent History Mode)...")
     all_parsed_data = []
-    
-    with sync_playwright() as p:
-        is_headless = os.getenv("HEADLESS", "true").lower() != "false"
-        browser = p.chromium.launch(
-            headless=is_headless,
-            args=["--disable-cache", "--disk-cache-size=0"]
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-        page = context.new_page()
-        
-        # Step 1: Top Page (INET-ID)
-        logger.info("Logging in to IPAT (Step 1: INET-ID)...")
-        page.goto("https://www.ipat.jra.go.jp/")
-        
-        # Check for closed message
-        if page.locator("text=ただいまの時間は投票受付時間外です。").is_visible():
-             raise Exception("JRA IPAT is currently closed.")
-        
-        inet_id = creds.inet_id.strip()
-        if not inet_id:
-             raise Exception("INET-ID is missing")
 
-        page.fill("input[name='inetid']", inet_id)
-        with page.expect_navigation(wait_until="domcontentloaded"):
-            page.click("p.button a[title='ログイン']")
-            
-        # Step 2: Subscriber Info
-        logger.info("Logging in to IPAT (Step 2: Subscriber Info)...")
-        page.wait_for_selector("input[name='i']")
-        page.fill("input[name='i']", creds.subscriber_number.strip())
-        page.fill("input[name='p']", creds.password.strip())
-        page.fill("input[name='r']", creds.pars_number.strip())
-        with page.expect_navigation(wait_until="domcontentloaded"):
-            page.click("a[title='ネット投票メニューへ']")
+    with _playwright_slot():
+        with sync_playwright() as p:
+            is_headless = os.getenv("HEADLESS", "true").lower() != "false"
+            browser = p.chromium.launch(
+                headless=is_headless,
+                args=[
+                    "--disable-cache",
+                    "--disk-cache-size=0",
+                    "--disable-dev-shm-usage",
+                    "--no-sandbox",
+                ],
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            context.route("**/*", _route_block_heavy_assets)
+            page = context.new_page()
 
-        # Step 3: Go to Vote History (Recent)
-        logger.info("Logging in to IPAT (Step 3: Vote History)...")
-        page.wait_for_load_state("networkidle")
-        history_btn_selector = "button.btn-reference"
-        page.wait_for_selector(history_btn_selector)
-        page.click(history_btn_selector)
-        page.wait_for_selector("h1:has-text('投票履歴一覧')")
-
-        # Step 4: Iterate through Today and Yesterday
-        logger.info("Checking for history items (Today & Yesterday)...")
-        
-        target_days = [
-            ("Today", "label[for='refer-today']", 0),
-            ("Yesterday", "label[for='refer-before']", 1)
-        ]
-        
-        for day_name, selector, day_offset in target_days:
-            logger.info("Switching to %s...", day_name)
-            page.click(selector)
-            
             try:
-                page.wait_for_selector("div.list-loading", state="visible", timeout=1000)
-                page.wait_for_selector("div.list-loading", state="hidden", timeout=10000)
-            except:
-                page.wait_for_timeout(1000)
-            
-            # Calculate Date String (YYYYMMDD)
-            target_date = datetime.now() - timedelta(days=day_offset)
-            date_str = target_date.strftime("%Y%m%d")
+                logger.info("Logging in to IPAT (Step 1: INET-ID)...")
+                page.goto("https://www.ipat.jra.go.jp/")
 
-            # Get number of receipts
-            rows = page.locator("table.table-status tbody tr")
-            count = rows.count()
-            logger.info("Found %d history items for %s.", count, day_name)
-            
-            for i in range(count):
-                # Re-query rows to avoid stale elements
-                rows = page.locator("table.table-status tbody tr")
-                row = rows.nth(i)
-                
-                # Check for "No History" message
-                try:
-                    row_text = row.inner_text()
-                    if "投票履歴がありません" in row_text:
-                        logger.info("No history found for %s. Skipping.", day_name)
-                        break
-                except:
-                    pass
+                if page.locator("text=ただいまの時間は投票受付時間外です。").is_visible():
+                    raise Exception("JRA IPAT is currently closed.")
 
-                # Extract Receipt No
-                try:
-                    receipt_no = row.locator("td.receipt a").inner_text().strip()
-                except:
-                    logger.warning("Could not extract receipt no for row %d", i)
-                    # Only print HTML if it's not the "No history" row (which we should have caught above, but just in case)
-                    if "投票履歴がありません" not in row.inner_html():
-                        html = row.inner_html()
-                        logger.debug("Row HTML (truncated): %s", html[:1000])
-                    continue
+                inet_id = creds.inet_id.strip()
+                if not inet_id:
+                    raise Exception("INET-ID is missing")
 
-                logger.info("Processing Receipt: %s", receipt_no)
-                
-                # Click to open details
-                try:
-                    target_link = row.locator("td.receipt a")
-                    target_link.scroll_into_view_if_needed()
-                    target_link.click()
-                except Exception as e:
-                    logger.warning("Failed to click receipt %s: %s", receipt_no, e)
-                    continue
+                page.fill("input[name='inetid']", inet_id)
+                with page.expect_navigation(wait_until="domcontentloaded"):
+                    page.click("p.button a[title='ログイン']")
 
-                # Wait for detail view
-                is_detail_loaded = False
-                try:
-                    # Wait for either the header or a known element in the detail view
-                    page.wait_for_selector("h1:has-text('投票履歴結果内容'), table.table-result", timeout=10000)
-                    is_detail_loaded = True
-                except:
-                    logger.warning("Failed to load detail view for %s. Attempting to recover...", receipt_no)
-                
-                if is_detail_loaded:
-                    # Parse Detail HTML
-                    content = page.content()
+                logger.info("Logging in to IPAT (Step 2: Subscriber Info)...")
+                page.wait_for_selector("input[name='i']")
+                page.fill("input[name='i']", creds.subscriber_number.strip())
+                page.fill("input[name='p']", creds.password.strip())
+                page.fill("input[name='r']", creds.pars_number.strip())
+                with page.expect_navigation(wait_until="domcontentloaded"):
+                    page.click("a[title='ネット投票メニューへ']")
+
+                logger.info("Logging in to IPAT (Step 3: Vote History)...")
+                page.wait_for_load_state("networkidle")
+                history_btn_selector = "button.btn-reference"
+                page.wait_for_selector(history_btn_selector)
+                page.click(history_btn_selector)
+                page.wait_for_selector("h1:has-text('投票履歴一覧')")
+
+                logger.info("Checking for history items (Today & Yesterday)...")
+                target_days = [
+                    ("Today", "label[for='refer-today']", 0),
+                    ("Yesterday", "label[for='refer-before']", 1),
+                ]
+
+                for day_name, selector, day_offset in target_days:
+                    logger.info("Switching to %s...", day_name)
+                    page.click(selector)
+
                     try:
-                        parsed = _parse_recent_detail_html(content, receipt_no, date_str)
-                        all_parsed_data.extend(parsed)
-                        logger.info("Extracted %d tickets.", len(parsed))
-                    except Exception as e:
-                        logger.warning("Error parsing detail for %s: %s", receipt_no, e)
-                
-                # Go back to list (Always try to go back if we might have moved)
+                        page.wait_for_selector("div.list-loading", state="visible", timeout=1000)
+                        page.wait_for_selector("div.list-loading", state="hidden", timeout=10000)
+                    except Exception:
+                        page.wait_for_timeout(1000)
+
+                    target_date = datetime.now() - timedelta(days=day_offset)
+                    date_str = target_date.strftime("%Y%m%d")
+
+                    rows = page.locator("table.table-status tbody tr")
+                    count = rows.count()
+                    logger.info("Found %d history items for %s.", count, day_name)
+
+                    for i in range(count):
+                        rows = page.locator("table.table-status tbody tr")
+                        row = rows.nth(i)
+
+                        try:
+                            row_text = row.inner_text()
+                            if "投票履歴がありません" in row_text:
+                                logger.info("No history found for %s. Skipping.", day_name)
+                                break
+                        except Exception:
+                            pass
+
+                        try:
+                            receipt_no = row.locator("td.receipt a").inner_text().strip()
+                        except Exception:
+                            logger.warning("Could not extract receipt no for row %d", i)
+                            if "投票履歴がありません" not in row.inner_html():
+                                html = row.inner_html()
+                                logger.debug("Row HTML (truncated): %s", html[:1000])
+                            continue
+
+                        logger.info("Processing Receipt: %s", receipt_no)
+
+                        try:
+                            target_link = row.locator("td.receipt a")
+                            target_link.scroll_into_view_if_needed()
+                            target_link.click()
+                        except Exception as e:
+                            logger.warning("Failed to click receipt %s: %s", receipt_no, e)
+                            continue
+
+                        is_detail_loaded = False
+                        try:
+                            page.wait_for_selector(
+                                "h1:has-text('投票履歴結果内容'), table.table-result", timeout=10000
+                            )
+                            is_detail_loaded = True
+                        except Exception:
+                            logger.warning(
+                                "Failed to load detail view for %s. Attempting to recover...", receipt_no
+                            )
+
+                        if is_detail_loaded:
+                            content = page.content()
+                            try:
+                                parsed = _parse_recent_detail_html(content, receipt_no, date_str)
+                                all_parsed_data.extend(parsed)
+                                logger.info("Extracted %d tickets.", len(parsed))
+                            except Exception as e:
+                                logger.warning("Error parsing detail for %s: %s", receipt_no, e)
+
+                        try:
+                            back_btn = page.locator("button:has-text('一覧に戻る')")
+                            if back_btn.is_visible():
+                                back_btn.click()
+                            else:
+                                close_btn = page.locator("button:has-text('閉じる')").last
+                                if close_btn.is_visible():
+                                    close_btn.click()
+
+                            page.wait_for_selector("h1:has-text('投票履歴一覧')", timeout=5000)
+                        except Exception:
+                            if "投票履歴一覧" not in page.content():
+                                logger.warning(
+                                    "Could not confirm return to list for %s. Reloading page...", receipt_no
+                                )
+                                page.reload()
+                                page.wait_for_selector("h1:has-text('投票履歴一覧')")
+
+            finally:
                 try:
-                    # Try "一覧に戻る" button
-                    back_btn = page.locator("button:has-text('一覧に戻る')")
-                    if back_btn.is_visible():
-                        back_btn.click()
-                    else:
-                        # Fallback: Close detail modal if it's a modal
-                        close_btn = page.locator("button:has-text('閉じる')").last
-                        if close_btn.is_visible():
-                            close_btn.click()
-                    
-                    # Wait for list to reappear
-                    page.wait_for_selector("h1:has-text('投票履歴一覧')", timeout=5000)
-                except:
-                    # If we can't find the back button or list header, we might already be on the list or stuck
-                    if "投票履歴一覧" not in page.content():
-                        logger.warning("Could not confirm return to list for %s. Reloading page...", receipt_no)
-                        page.reload()
-                        page.wait_for_selector("h1:has-text('投票履歴一覧')")
-                
-        browser.close()
+                    context.close()
+                finally:
+                    browser.close()
         
     return all_parsed_data
