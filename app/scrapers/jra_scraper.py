@@ -539,6 +539,9 @@ def scrape_recent_history(creds: IpatAuth):
 
             last_dialog_message = {"message": None}
 
+            popup_page_holder = {"page": None}
+            last_popup_info = {"url": None, "title": None}
+
             def _on_dialog(dialog):
                 try:
                     msg = dialog.message
@@ -553,6 +556,48 @@ def scrape_recent_history(creds: IpatAuth):
                     pass
 
             page.on("dialog", _on_dialog)
+
+            def _on_new_page(new_page):
+                try:
+                    popup_page_holder["page"] = new_page
+                except Exception:
+                    pass
+                try:
+                    new_page.on("dialog", _on_dialog)
+                except Exception:
+                    pass
+                try:
+                    last_popup_info["url"] = _mask_digits(getattr(new_page, "url", "") or "")[:200]
+                except Exception:
+                    pass
+                try:
+                    last_popup_info["title"] = (new_page.title() or "")[:120]
+                except Exception:
+                    pass
+
+            # クリック後に別タブ/ポップアップで遷移するケースを拾う
+            try:
+                context.on("page", _on_new_page)
+            except Exception:
+                pass
+
+            def _adopt_popup_if_any(reason: str):
+                nonlocal page
+                try:
+                    new_page = popup_page_holder.get("page")
+                except Exception:
+                    new_page = None
+                if new_page and new_page != page:
+                    try:
+                        logger.info(
+                            "Switching to popup page (%s). url='%s' title='%s'",
+                            reason,
+                            last_popup_info.get("url"),
+                            last_popup_info.get("title"),
+                        )
+                    except Exception:
+                        logger.info("Switching to popup page (%s).", reason)
+                    page = new_page
 
             def _count_in_any_frame(selector: str) -> int:
                 total = 0
@@ -651,6 +696,13 @@ def scrape_recent_history(creds: IpatAuth):
                             "if (typeof ToModernMenu === 'function') { ToModernMenu(); } else { throw new Error('ToModernMenu not found'); }"
                         )
 
+                # 別タブ/ポップアップが開いた場合はそちらに切替
+                try:
+                    page.wait_for_timeout(1000)
+                except Exception:
+                    pass
+                _adopt_popup_if_any("after menu action")
+
                 # 画面がJS/非同期で切り替わる場合があるため、一旦待つ
                 try:
                     page.wait_for_load_state("networkidle", timeout=10000)
@@ -677,6 +729,13 @@ def scrape_recent_history(creds: IpatAuth):
                         page.eval_on_selector("input[name='r']", "el => el.form && el.form.submit()")
                     except Exception as e:
                         logger.warning("Form submit fallback failed: %s", e)
+
+                # submitで別ページが開くパターンもある
+                try:
+                    page.wait_for_timeout(1000)
+                except Exception:
+                    pass
+                _adopt_popup_if_any("after submit fallback")
 
                 # メニュー画面に到達したことを、複合条件で判定
                 # - URLが変わる
@@ -723,6 +782,9 @@ def scrape_recent_history(creds: IpatAuth):
                         > 0,
                         "error_texts": error_texts,
                         "last_dialog": last_dialog_message.get("message"),
+                        "popup_url": last_popup_info.get("url"),
+                        "popup_title": last_popup_info.get("title"),
+                        "body_text_head": None,
                         "frame_count": None,
                         "frames": [],
                     }
@@ -730,6 +792,13 @@ def scrape_recent_history(creds: IpatAuth):
                         debug["title"] = page.title()
                     except Exception:
                         debug["title"] = None
+
+                    try:
+                        # 画面テキストを少しだけ（数字はマスク）
+                        body_text = page.locator("body").inner_text(timeout=1000)
+                        debug["body_text_head"] = _mask_digits(body_text).strip().replace("\n\n", "\n")[:400]
+                    except Exception:
+                        debug["body_text_head"] = None
 
                     try:
                         frames = page.frames
@@ -768,11 +837,25 @@ def scrape_recent_history(creds: IpatAuth):
 
                 logger.info("Logging in to IPAT (Step 3: Vote History)...")
                 page.wait_for_load_state("networkidle")
-                history_btn_selector = "button.btn-reference"
-                if not _wait_for_selector_any_frame(history_btn_selector, timeout_ms=15000):
-                    raise Exception("History button not found (main or iframe)")
-                if not _click_first_in_any_frame(history_btn_selector, timeout_ms=15000):
-                    raise Exception("Failed to click history button (main or iframe)")
+
+                # UI変更/文言差異に備えて複数候補を試す
+                history_candidates = [
+                    "button.btn-reference",
+                    "a:has-text('投票履歴')",
+                    "button:has-text('投票履歴')",
+                    "a:has-text('投票履歴一覧')",
+                    "button:has-text('投票履歴一覧')",
+                ]
+
+                clicked = False
+                for sel in history_candidates:
+                    if _wait_for_selector_any_frame(sel, timeout_ms=4000):
+                        if _click_first_in_any_frame(sel, timeout_ms=15000):
+                            clicked = True
+                            break
+
+                if not clicked:
+                    raise Exception("History entry not found/clickable (main or iframe)")
                 page.wait_for_selector("h1:has-text('投票履歴一覧')")
 
                 logger.info("Checking for history items (Today & Yesterday)...")
