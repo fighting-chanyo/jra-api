@@ -925,7 +925,8 @@ def scrape_recent_history(creds: IpatAuth):
                         pass
 
                 raise
-
+            else:
+                # ここまで来たら投票履歴一覧画面に到達している前提
                 logger.info("Checking for history items (Today & Yesterday)...")
                 target_days = [
                     ("Today", "label[for='refer-today']", 0),
