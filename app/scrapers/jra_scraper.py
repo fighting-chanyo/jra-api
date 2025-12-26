@@ -5,7 +5,7 @@ import logging
 import threading
 from contextlib import contextmanager
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from app.schemas import IpatAuth
 from app.services.parsers import parse_jra_csv
 from app.constants import BET_TYPE_MAP
@@ -569,8 +569,39 @@ def scrape_recent_history(creds: IpatAuth):
                         )
 
                 # メニュー画面に到達したことを、要素の出現で確認
-                # (ここが通れば次のStep3の待機も安定する)
-                page.wait_for_selector("button.btn-reference", timeout=15000)
+                # (modern側はnavigationが発生しないケースがあるためDOMで判定)
+                try:
+                    page.wait_for_selector("button.btn-reference", timeout=20000)
+                except PlaywrightTimeoutError:
+                    debug = {
+                        "url": getattr(page, "url", None),
+                        "title": None,
+                        "has_menu_button": page.locator("button.btn-reference").count() > 0,
+                        "has_subscriber_inputs": page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0,
+                        "has_login_button": page.locator("p.button a[title='ログイン']").count() > 0,
+                        "has_menu_link": page.locator("a[title='ネット投票メニューへ']").count() > 0,
+                        "has_error_like_text": page.locator("text=誤り|text=エラー|text=入力|text=再入力").count() > 0,
+                    }
+                    try:
+                        debug["title"] = page.title()
+                    except Exception:
+                        debug["title"] = None
+
+                    logger.warning("Recent Step2 did not reach menu page within timeout. state=%s", debug)
+
+                    # Optional: save artifacts if explicitly enabled (avoid leaking sensitive data by default)
+                    if os.getenv("SAVE_DEBUG_ARTIFACTS", "false").lower() == "true":
+                        try:
+                            with open("/tmp/debug_recent_step2_timeout.html", "w", encoding="utf-8") as f:
+                                f.write(page.content())
+                        except Exception:
+                            pass
+                        try:
+                            page.screenshot(path="/tmp/debug_recent_step2_timeout.png", full_page=True)
+                        except Exception:
+                            pass
+
+                    raise
 
                 logger.info("Logging in to IPAT (Step 3: Vote History)...")
                 page.wait_for_load_state("networkidle")
