@@ -70,15 +70,20 @@ def scrape_past_history_csv(creds: IpatAuth):
         logger.info("Navigating to Receipt Number List (JRAWeb020)...")
         accept_link = page.locator("a.toAcceptnoNum")
         if accept_link.is_visible():
-            accept_link.click()
+            # aタグクリックが内部でPOST送信する実装の場合、確実に遷移完了を待つ
+            with page.expect_navigation(wait_until="domcontentloaded"):
+                accept_link.click()
         else:
-            page.evaluate("document.forms['Go020'].submit()")
+            # JS submit は Playwright が自動でナビゲーション待機しないため、明示的に待つ
+            with page.expect_navigation(wait_until="domcontentloaded"):
+                page.evaluate("document.forms['Go020'].submit()")
         
-        # --- ここから修正 ---
         # ページ遷移を待機し、まずセッションエラーの可能性をチェックする
         try:
-            # 「日付選択」ページ、または「セッション切れ」ページのどちらかの読み込みが完了するのを待つ
+            # 追加の読み込みを待つ（SPAではないが、稀に遅延するため）
             page.wait_for_load_state("domcontentloaded", timeout=15000)
+            # 「日付選択」ページに到達していることを確認
+            page.locator("h2:has-text('日付選択')").wait_for(timeout=15000)
 
             # セッション切れ画面の特有のテキストが存在するかどうかで判定
             if page.locator("text=ログインが無効となったか").is_visible():
@@ -93,18 +98,28 @@ def scrape_past_history_csv(creds: IpatAuth):
             raise Exception(error_message)
 
         logger.info("Checking Date List...")
-        date_buttons = page.locator("input[value='選択']")
+        # 日付選択ページの「選択」ボタン（表の中）に限定して拾う
+        date_buttons = page.locator("table[border='1'] input[type='submit'][value='選択']")
+        if date_buttons.count() == 0:
+            # フォールバック（ページ構造変更/属性差異に備える）
+            date_buttons = page.locator("input[type='submit'][value='選択']")
         date_count = date_buttons.count()
         logger.info("Found %d date buttons.", date_count)
 
         if date_count == 0:
-            # エラーチェックは通過したがボタンがない場合
-            logger.info("No dates found. Maybe no betting history.")
+            # エラーチェックは通過したがボタンがない場合：原因切り分け用に画面を保存
+            try:
+                logger.info("No dates found. title='%s' url='%s'", page.title(), page.url)
+            except Exception:
+                logger.info("No dates found. (failed to read title/url)")
+            with open("debug_date_list_missing.html", "w", encoding="utf-8") as f:
+                f.write(page.content())
+            logger.info("No dates found. Maybe no betting history or unexpected page. See debug_date_list_missing.html")
             return []
-        # --- ここまで修正 ---
+
 
         for i in range(date_count):
-            page.locator("input[value='選択']").nth(i).click()
+            date_buttons.nth(i).click()
             page.wait_for_load_state("networkidle")
             csv_btn = page.locator("form[action*='JRACSVDownload'] input[name='normal']")
             if csv_btn.is_visible():
