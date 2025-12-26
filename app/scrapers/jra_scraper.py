@@ -13,6 +13,15 @@ from app.constants import BET_TYPE_MAP
 logger = logging.getLogger(__name__)
 
 
+_DIGITS_RE = re.compile(r"[0-9０-９]+");
+
+
+def _mask_digits(text: str) -> str:
+    if not text:
+        return text
+    return _DIGITS_RE.sub("X", text)
+
+
 _PLAYWRIGHT_MAX_CONCURRENCY = int(os.getenv("PLAYWRIGHT_MAX_CONCURRENCY", "1") or "1")
 _PLAYWRIGHT_SLOT_TIMEOUT_SEC = float(os.getenv("PLAYWRIGHT_SLOT_TIMEOUT_SEC", "30") or "30")
 _PLAYWRIGHT_SEMAPHORE = threading.BoundedSemaphore(_PLAYWRIGHT_MAX_CONCURRENCY)
@@ -568,11 +577,43 @@ def scrape_recent_history(creds: IpatAuth):
                             "if (typeof ToModernMenu === 'function') { ToModernMenu(); } else { throw new Error('ToModernMenu not found'); }"
                         )
 
-                # メニュー画面に到達したことを、要素の出現で確認
-                # (modern側はnavigationが発生しないケースがあるためDOMで判定)
+                # 画面がJS/非同期で切り替わる場合があるため、一旦待つ
                 try:
-                    page.wait_for_selector("button.btn-reference", timeout=20000)
+                    page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception:
+                    pass
+
+                # メニュー画面に到達したことを、複合条件で判定
+                # - URLが変わる
+                # - 加入者入力欄が消える
+                # - メニュー要素が出る
+                try:
+                    page.wait_for_function(
+                        """() => {
+                            const urlChanged = !location.href.includes('pw_080_i.cgi');
+                            const hasInputs = !!document.querySelector("input[name='i'], input[name='p'], input[name='r']");
+                            const hasMenuBtn = !!document.querySelector('button.btn-reference');
+                            return urlChanged || !hasInputs || hasMenuBtn;
+                        }""",
+                        timeout=25000,
+                    )
+                    # ここでメニュー要素が出る想定（出ない場合はUI変更の可能性）
+                    page.wait_for_selector("button.btn-reference", timeout=15000)
                 except PlaywrightTimeoutError:
+                    # 失敗時に、画面内のエラーらしきテキストを(数字マスクして)少しだけ拾う
+                    error_texts = []
+                    try:
+                        candidates = page.locator(
+                            ".error, .err, .caution, .message, #error, #errmsg, [class*='error'], [id*='error']"
+                        )
+                        n = min(candidates.count(), 3)
+                        for i in range(n):
+                            t = candidates.nth(i).inner_text().strip()
+                            if t:
+                                error_texts.append(_mask_digits(t)[:200])
+                    except Exception:
+                        pass
+
                     debug = {
                         "url": getattr(page, "url", None),
                         "title": None,
@@ -580,7 +621,11 @@ def scrape_recent_history(creds: IpatAuth):
                         "has_subscriber_inputs": page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0,
                         "has_login_button": page.locator("p.button a[title='ログイン']").count() > 0,
                         "has_menu_link": page.locator("a[title='ネット投票メニューへ']").count() > 0,
-                        "has_error_like_text": page.locator("text=誤り|text=エラー|text=入力|text=再入力").count() > 0,
+                        "has_error_like_text": page.locator(
+                            "text=誤り|text=エラー|text=入力|text=再入力|text=失敗|text=確認|text=有効"
+                        ).count()
+                        > 0,
+                        "error_texts": error_texts,
                     }
                     try:
                         debug["title"] = page.title()
