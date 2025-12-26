@@ -366,17 +366,26 @@ class NetkeibaScraper:
             except (AttributeError, IndexError):
                 logger.warning("Could not parse 1st-3rd place horse numbers for %s", external_id)
                 return None
+
+            # 終了直後など「結果枠はあるが中身がモザイク/未確定」の場合がある。
+            # その場合は誤って確定扱いしないよう、最低限の数値検証を行う。
+            if not (result_1st.isdigit() and result_2nd.isdigit() and result_3rd.isdigit()):
+                logger.info(
+                    "Result numbers are not finalized for %s (masked/non-digit): %s/%s/%s",
+                    external_id,
+                    result_1st,
+                    result_2nd,
+                    result_3rd,
+                )
+                return None
             
             # --- 2. 払戻金の取得 ---
             payout_data = {}
             payout_box = soup.find("div", class_="Result_Pay_Back")
             if not payout_box:
-                return {
-                    "result_1st": result_1st,
-                    "result_2nd": result_2nd,
-                    "result_3rd": result_3rd,
-                    "payout_data": {}
-                }
+                # 払戻枠が出ていない場合は未確定扱い
+                logger.info("Payout box not found for %s (not finalized yet?)", external_id)
+                return None
 
             payout_tables = payout_box.find_all("table")
             
@@ -444,6 +453,12 @@ class NetkeibaScraper:
                     
                     if payout_list:
                         payout_data[bet_type_key] = payout_list
+
+            # 払戻が空の場合は未確定、もしくはHTML変更でパースできていない可能性がある。
+            # いずれにせよ誤って確定扱いしないよう、ここで弾く。
+            if not payout_data:
+                logger.info("Payout data empty for %s (not finalized or parse failed)", external_id)
+                return None
 
             return {
                 "result_1st": result_1st,

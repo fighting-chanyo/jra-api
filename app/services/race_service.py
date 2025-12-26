@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 import json
 import logging
 import time
+from typing import Optional
 from app.scrapers.netkeiba_scraper import NetkeibaScraper
 from app.services.supabase_client import get_supabase_client
 from app.services.judgment_logic import JudgmentLogic
@@ -13,6 +14,23 @@ class RaceService:
     def __init__(self):
         self.scraper = NetkeibaScraper()
         self.supabase = get_supabase_client()
+
+    @staticmethod
+    def _is_finalized_result(result_data: Optional[dict]) -> bool:
+        if not result_data:
+            return False
+
+        r1 = str(result_data.get("result_1st") or "")
+        r2 = str(result_data.get("result_2nd") or "")
+        r3 = str(result_data.get("result_3rd") or "")
+        if not (r1.isdigit() and r2.isdigit() and r3.isdigit()):
+            return False
+
+        payout_data = result_data.get("payout_data")
+        if not isinstance(payout_data, dict) or not payout_data:
+            return False
+
+        return True
 
     def import_schedule(self, year: int, month: int):
         """
@@ -186,8 +204,8 @@ class RaceService:
                     "payout_data": race.get("payout_data")
                 }
                 # データが不完全なら再取得を試みる
-                if not (result_data["result_1st"] and result_data["payout_data"]):
-                     is_finished = False 
+                if not self._is_finalized_result(result_data):
+                    is_finished = False
                 else:
                     used_db_result_count += 1
 
@@ -199,9 +217,10 @@ class RaceService:
                     scrape_not_finalized_count += 1
                     continue
 
-                # 取得はできたが空（想定外）をカウント
-                if not (result_data.get("result_1st") and result_data.get("payout_data") is not None):
-                    scrape_error_or_empty_count += 1
+                # 終了直後など、結果枠はあるが内容が未確定/モザイクのケースはここで弾く
+                if not self._is_finalized_result(result_data):
+                    scrape_not_finalized_count += 1
+                    continue
 
                 # 3. DB更新 (Races)
                 update_payload = {
@@ -220,9 +239,11 @@ class RaceService:
                     logger.exception("Error updating race %s", race.get("id"))
 
             # 4. 的中判定 (result_dataがあれば実行)
-            if result_data:
+            if self._is_finalized_result(result_data):
                 hits = self._process_hit_detection(race["id"], result_data)
                 total_hits += hits
+            elif result_data:
+                scrape_error_or_empty_count += 1
 
         elapsed_sec = time.monotonic() - started_at
         logger.info(
