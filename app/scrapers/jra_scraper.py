@@ -32,7 +32,7 @@ def _playwright_slot():
         _PLAYWRIGHT_SEMAPHORE.release()
 
 
-def _route_block_heavy_assets(route):
+def _route_block_heavy_assets_pc(route):
     try:
         req = route.request
         if req.resource_type in ("image", "media", "font"):
@@ -69,6 +69,47 @@ def _route_block_heavy_assets(route):
         except Exception:
             pass
 
+
+def _route_block_heavy_assets_modern(route):
+    """Recent(modern)向け: 画像/フォント/メディアは止めるがCSSは止めない。
+
+    modern側はボタンがCSS前提のことがあり、CSSを止めると要素が不可視になって
+    Playwrightのclickがタイムアウトすることがある。
+    """
+    try:
+        req = route.request
+        if req.resource_type in ("image", "media", "font"):
+            route.abort()
+            return
+        url = (req.url or "").lower()
+        if url.endswith(
+            (
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".webp",
+                ".svg",
+                ".woff",
+                ".woff2",
+                ".ttf",
+                ".otf",
+                ".mp4",
+                ".webm",
+                ".mp3",
+                ".m4a",
+                ".ogg",
+            )
+        ):
+            route.abort()
+            return
+        route.continue_()
+    except Exception:
+        try:
+            route.continue_()
+        except Exception:
+            pass
+
 def scrape_past_history_csv(creds: IpatAuth):
     """PlaywrightによるスクレイピングとCSVパース処理を担う (旧sync_past_history)"""
     logger.info("Accessing JRA Vote Inquiry (PC/CSV Mode)...")
@@ -90,7 +131,7 @@ def scrape_past_history_csv(creds: IpatAuth):
                 accept_downloads=True,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
-            context.route("**/*", _route_block_heavy_assets)
+            context.route("**/*", _route_block_heavy_assets_pc)
             page = context.new_page()
             page.on("dialog", lambda dialog: dialog.accept())
 
@@ -483,7 +524,7 @@ def scrape_recent_history(creds: IpatAuth):
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
-            context.route("**/*", _route_block_heavy_assets)
+            context.route("**/*", _route_block_heavy_assets_modern)
             page = context.new_page()
 
             try:
@@ -506,8 +547,16 @@ def scrape_recent_history(creds: IpatAuth):
                 page.fill("input[name='i']", creds.subscriber_number.strip())
                 page.fill("input[name='p']", creds.password.strip())
                 page.fill("input[name='r']", creds.pars_number.strip())
-                with page.expect_navigation(wait_until="domcontentloaded"):
-                    page.click("a[title='ネット投票メニューへ']")
+                try:
+                    with page.expect_navigation(wait_until="domcontentloaded"):
+                        page.click("a[title='ネット投票メニューへ']", timeout=10000)
+                except Exception as e:
+                    # CSSブロック等で要素が不可視になるケースのフォールバック
+                    logger.warning("Menu link not clickable; fallback to ToModernMenu(): %s", e)
+                    with page.expect_navigation(wait_until="domcontentloaded"):
+                        page.evaluate(
+                            "if (typeof ToModernMenu === 'function') { ToModernMenu(); } else { throw new Error('ToModernMenu not found'); }"
+                        )
 
                 logger.info("Logging in to IPAT (Step 3: Vote History)...")
                 page.wait_for_load_state("networkidle")
