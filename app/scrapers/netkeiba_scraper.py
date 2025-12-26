@@ -9,6 +9,9 @@ from app.constants import RACE_COURSE_MAP
 import time
 import random
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class NetkeibaScraper:
     BASE_URL = "https://race.netkeiba.com"
@@ -136,10 +139,49 @@ class NetkeibaScraper:
 
         race_dates.sort()
 
+        logger.info("Extracted %d race dates for %04d-%02d: %s", len(race_dates), year, month, race_dates)
+
+        # カレンダーHTMLが一部欠けている等で「連続開催日の1日だけ」が抜けることがあるため、
+        # 1日ギャップ(例: 2/8, 2/10 の間の 2/9)だけは補完チェックする。
+        # 連続開催でない通常の平日は補完しない（余計なアクセス増を避ける）。
+        prefetched_races: Dict[str, List[Dict[str, Any]]] = {}
+        try:
+            parsed_dates = [datetime.strptime(d, "%Y%m%d").date() for d in race_dates]
+            for i in range(len(parsed_dates) - 1):
+                delta_days = (parsed_dates[i + 1] - parsed_dates[i]).days
+                if delta_days != 2:
+                    continue
+
+                missing_date = parsed_dates[i] + timedelta(days=1)
+                if missing_date.year != year or missing_date.month != month:
+                    continue
+
+                missing_str = missing_date.strftime("%Y%m%d")
+                if missing_str in race_dates:
+                    continue
+
+                logger.warning(
+                    "Detected a 1-day gap between %s and %s; probing missing date %s",
+                    race_dates[i],
+                    race_dates[i + 1],
+                    missing_str,
+                )
+                races = self._scrape_race_list(missing_str)
+                if races:
+                    logger.info("Gap-fill: found %d races for %s; including it", len(races), missing_str)
+                    prefetched_races[missing_str] = races
+                    race_dates.append(missing_str)
+        except Exception as e:
+            logger.warning("Gap-fill check skipped due to error: %s", e)
+
+        race_dates.sort()
+
         all_races = []
         for date_str in race_dates:
             print(f"Fetching race list for {date_str}...")
-            races = self._scrape_race_list(date_str)
+            races = prefetched_races.get(date_str)
+            if races is None:
+                races = self._scrape_race_list(date_str)
             all_races.extend(races)
             # ループ内でも待機（_get_html内のsleepと合わせて長めになる）
             time.sleep(1)
