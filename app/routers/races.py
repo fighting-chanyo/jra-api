@@ -11,7 +11,7 @@ class ScheduleImportRequest(BaseModel):
 @router.post("/races/import-schedule")
 def import_schedule(req: ScheduleImportRequest, background_tasks: BackgroundTasks):
     service = RaceService()
-    # Run in background as it might take time
+    # 即時応答（重い処理はバックグラウンドで実行）
     background_tasks.add_task(service.import_schedule, req.year, req.month)
     return {"message": "Schedule import started.", "year": req.year, "month": req.month}
 
@@ -21,6 +21,5 @@ from datetime import date
 @router.post("/races/update-results")
 def update_results(background_tasks: BackgroundTasks, target_date: Optional[date] = None):
     service = RaceService()
-    # Run in background
     background_tasks.add_task(service.update_results, target_date)
     return {"message": "Result update started.", "target_date": target_date}
