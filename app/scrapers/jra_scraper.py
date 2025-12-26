@@ -653,210 +653,278 @@ def scrape_recent_history(creds: IpatAuth):
                         time.sleep(0.25)
                 return False
 
+            def _is_restart_notice() -> bool:
+                # 「初期画面からINET-IDを入力してやり直してください」系の案内
+                try:
+                    if page.locator("text=初期画面からINET-ID").count() > 0:
+                        return True
+                except Exception:
+                    pass
+                try:
+                    if page.locator("text=INET-IDを入力してやり直してください").count() > 0:
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            class _IpatRestartRequired(Exception):
+                pass
+
             try:
-                logger.info("Logging in to IPAT (Step 1: INET-ID)...")
-                page.goto("https://www.ipat.jra.go.jp/")
-
-                if page.locator("text=ただいまの時間は投票受付時間外です。").is_visible():
-                    raise Exception("JRA IPAT is currently closed.")
-
-                inet_id = creds.inet_id.strip()
-                if not inet_id:
-                    raise Exception("INET-ID is missing")
-
-                page.fill("input[name='inetid']", inet_id)
-                with page.expect_navigation(wait_until="domcontentloaded"):
-                    page.click("p.button a[title='ログイン']")
-
-                logger.info("Logging in to IPAT (Step 2: Subscriber Info)...")
-                page.wait_for_selector("input[name='i']")
-                page.fill("input[name='i']", creds.subscriber_number.strip())
-                page.fill("input[name='p']", creds.password.strip())
-                page.fill("input[name='r']", creds.pars_number.strip())
-                before_url = page.url
-                # NOTE: modern側はSPA的な遷移で「navigation」が発生しない場合がある。
-                # expect_navigationで待つとハングすることがあるため、画面要素の出現で待機する。
-                page.wait_for_selector("a[title='ネット投票メニューへ']", timeout=15000)
-                menu_link = page.locator("a[title='ネット投票メニューへ']")
                 try:
-                    menu_link.scroll_into_view_if_needed()
+                    login_retries = int(os.getenv("IPAT_RECENT_LOGIN_RETRIES", "1") or "1")
                 except Exception:
-                    pass
-                try:
-                    menu_link.click(timeout=10000)
-                except Exception as e1:
-                    logger.warning("Menu link not clickable (normal): %s", e1)
+                    login_retries = 1
+
+                for attempt in range(login_retries + 1):
+                    if attempt > 0:
+                        logger.warning("Retrying recent login from initial screen. attempt=%d", attempt + 1)
+                        try:
+                            context.clear_cookies()
+                        except Exception:
+                            pass
+                        try:
+                            popup_page_holder["page"] = None
+                            last_popup_info["url"] = None
+                            last_popup_info["title"] = None
+                        except Exception:
+                            pass
+                        try:
+                            page.goto("https://www.ipat.jra.go.jp/", wait_until="domcontentloaded")
+                            page.wait_for_timeout(1200)
+                        except Exception:
+                            pass
+
+                    logger.info("Logging in to IPAT (Step 1: INET-ID)...")
+                    page.goto("https://www.ipat.jra.go.jp/")
+
+                    if page.locator("text=ただいまの時間は投票受付時間外です。").is_visible():
+                        raise Exception("JRA IPAT is currently closed.")
+
+                    inet_id = creds.inet_id.strip()
+                    if not inet_id:
+                        raise Exception("INET-ID is missing")
+
+                    page.fill("input[name='inetid']", inet_id)
+                    with page.expect_navigation(wait_until="domcontentloaded"):
+                        page.click("p.button a[title='ログイン']")
+
+                    logger.info("Logging in to IPAT (Step 2: Subscriber Info)...")
+                    page.wait_for_selector("input[name='i']")
+                    page.fill("input[name='i']", creds.subscriber_number.strip())
+                    page.fill("input[name='p']", creds.password.strip())
+                    page.fill("input[name='r']", creds.pars_number.strip())
+                    before_url = page.url
+                    # NOTE: modern側はSPA的な遷移で「navigation」が発生しない場合がある。
+                    # expect_navigationで待つとハングすることがあるため、画面要素の出現で待機する。
+                    page.wait_for_selector("a[title='ネット投票メニューへ']", timeout=15000)
+                    menu_link = page.locator("a[title='ネット投票メニューへ']")
                     try:
-                        # 不可視でもonclickを発火させたいケースがある
-                        menu_link.click(timeout=5000, force=True)
-                    except Exception as e2:
-                        logger.warning("Menu link not clickable (force): %s", e2)
-                        # 最後の手段: 直接JS関数を呼ぶ
-                        page.evaluate(
-                            "if (typeof ToModernMenu === 'function') { ToModernMenu(); } else { throw new Error('ToModernMenu not found'); }"
+                        menu_link.scroll_into_view_if_needed()
+                    except Exception:
+                        pass
+                    try:
+                        menu_link.click(timeout=10000)
+                    except Exception as e1:
+                        logger.warning("Menu link not clickable (normal): %s", e1)
+                        try:
+                            # 不可視でもonclickを発火させたいケースがある
+                            menu_link.click(timeout=5000, force=True)
+                        except Exception as e2:
+                            logger.warning("Menu link not clickable (force): %s", e2)
+                            # 最後の手段: 直接JS関数を呼ぶ
+                            page.evaluate(
+                                "if (typeof ToModernMenu === 'function') { ToModernMenu(); } else { throw new Error('ToModernMenu not found'); }"
+                            )
+
+                    # 別タブ/ポップアップが開いた場合はそちらに切替
+                    try:
+                        page.wait_for_timeout(1000)
+                    except Exception:
+                        pass
+                    _adopt_popup_if_any("after menu action")
+
+                    # 画面がJS/非同期で切り替わる場合があるため、一旦待つ
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=10000)
+                    except Exception:
+                        pass
+
+                    # ここで「初期画面からINET-IDを…」案内に落ちるケースがあるため早期検知
+                    if _is_restart_notice():
+                        raise _IpatRestartRequired("restart notice shown after menu action")
+
+                    # まだ加入者入力画面のままなら、フォームsubmitも試す（リンク/JSが効かないケース向け）
+                    try:
+                        still_on_subscriber = (
+                            "pw_080_i.cgi" in (page.url or "")
+                            and page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0
                         )
+                    except Exception:
+                        still_on_subscriber = False
 
-                # 別タブ/ポップアップが開いた場合はそちらに切替
-                try:
-                    page.wait_for_timeout(1000)
-                except Exception:
-                    pass
-                _adopt_popup_if_any("after menu action")
+                    if still_on_subscriber:
+                        logger.warning(
+                            "Still on subscriber page after menu action. url(before)='%s' url(after)='%s' - trying form submit.",
+                            before_url,
+                            getattr(page, "url", None),
+                        )
+                        try:
+                            # 入力欄の属するformをsubmitする
+                            page.eval_on_selector("input[name='r']", "el => el.form && el.form.submit()")
+                        except Exception as e:
+                            logger.warning("Form submit fallback failed: %s", e)
 
-                # 画面がJS/非同期で切り替わる場合があるため、一旦待つ
-                try:
-                    page.wait_for_load_state("networkidle", timeout=10000)
-                except Exception:
-                    pass
-
-                # まだ加入者入力画面のままなら、フォームsubmitも試す（リンク/JSが効かないケース向け）
-                try:
-                    still_on_subscriber = (
-                        "pw_080_i.cgi" in (page.url or "")
-                        and page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0
-                    )
-                except Exception:
-                    still_on_subscriber = False
-
-                if still_on_subscriber:
-                    logger.warning(
-                        "Still on subscriber page after menu action. url(before)='%s' url(after)='%s' - trying form submit.",
-                        before_url,
-                        getattr(page, "url", None),
-                    )
+                    # submitで別ページが開くパターンもある
                     try:
-                        # 入力欄の属するformをsubmitする
-                        page.eval_on_selector("input[name='r']", "el => el.form && el.form.submit()")
-                    except Exception as e:
-                        logger.warning("Form submit fallback failed: %s", e)
+                        page.wait_for_timeout(1000)
+                    except Exception:
+                        pass
+                    _adopt_popup_if_any("after submit fallback")
 
-                # submitで別ページが開くパターンもある
-                try:
-                    page.wait_for_timeout(1000)
-                except Exception:
-                    pass
-                _adopt_popup_if_any("after submit fallback")
+                    if _is_restart_notice():
+                        raise _IpatRestartRequired("restart notice shown after submit fallback")
 
-                # メニュー画面に到達したことを、複合条件で判定
-                # - URLが変わる
-                # - 加入者入力欄が消える
-                # - メニュー要素が出る
-                try:
-                    page.wait_for_function(
-                        """() => {
-                            const urlChanged = !location.href.includes('pw_080_i.cgi');
-                            const hasInputs = !!document.querySelector("input[name='i'], input[name='p'], input[name='r']");
-                            const hasMenuBtn = !!document.querySelector('button.btn-reference');
-                            return urlChanged || !hasInputs || hasMenuBtn;
-                        }""",
-                        timeout=25000,
-                    )
+                    # メニュー画面に到達したことを、複合条件で判定
+                    # - URLが変わる
+                    # - 加入者入力欄が消える
+                    # - メニュー要素が出る
+                    try:
+                        page.wait_for_function(
+                            """() => {
+                                const urlChanged = !location.href.includes('pw_080_i.cgi');
+                                const hasInputs = !!document.querySelector("input[name='i'], input[name='p'], input[name='r']");
+                                const hasMenuBtn = !!document.querySelector('button.btn-reference');
+                                return urlChanged || !hasInputs || hasMenuBtn;
+                            }""",
+                            timeout=25000,
+                        )
+                    except Exception:
+                        pass
+
+                    if _is_restart_notice():
+                        raise _IpatRestartRequired("restart notice shown during menu wait")
+
                     # ここでメニュー要素が出る想定（iframe内の可能性もあるため全frame対象）
                     if not _wait_for_selector_any_frame("button.btn-reference", timeout_ms=15000):
                         raise PlaywrightTimeoutError("menu button not found in any frame")
-                except PlaywrightTimeoutError:
-                    # 失敗時に、画面内のエラーらしきテキストを(数字マスクして)少しだけ拾う
-                    error_texts = []
+
+                    logger.info("Logging in to IPAT (Step 3: Vote History)...")
+                    page.wait_for_load_state("networkidle")
+
+                    # UI変更/文言差異に備えて複数候補を試す
+                    history_candidates = [
+                        "button.btn-reference",
+                        "a:has-text('投票履歴')",
+                        "button:has-text('投票履歴')",
+                        "a:has-text('投票履歴一覧')",
+                        "button:has-text('投票履歴一覧')",
+                    ]
+
+                    clicked = False
+                    for sel in history_candidates:
+                        if _wait_for_selector_any_frame(sel, timeout_ms=4000):
+                            if _click_first_in_any_frame(sel, timeout_ms=15000):
+                                clicked = True
+                                break
+
+                    if not clicked:
+                        raise Exception("History entry not found/clickable (main or iframe)")
+                    page.wait_for_selector("h1:has-text('投票履歴一覧')")
+
+                    # ここまで来ればログイン成功
+                    break
+
+                else:
+                    raise Exception("Recent login retry loop exhausted")
+
+            except _IpatRestartRequired as e:
+                raise Exception(
+                    "IPAT returned a restart notice (初期画面からINET-IDを入力してやり直してください). "
+                    "The session/state was rejected. Try again later. "
+                    f"detail={e}"
+                )
+
+            except PlaywrightTimeoutError:
+                # 失敗時に、画面内のエラーらしきテキストを(数字マスクして)少しだけ拾う
+                error_texts = []
+                try:
+                    candidates = page.locator(
+                        ".error, .err, .caution, .message, #error, #errmsg, [class*='error'], [id*='error']"
+                    )
+                    n = min(candidates.count(), 3)
+                    for i in range(n):
+                        t = candidates.nth(i).inner_text().strip()
+                        if t:
+                            error_texts.append(_mask_digits(t)[:200])
+                except Exception:
+                    pass
+
+                debug = {
+                    "url": getattr(page, "url", None),
+                    "title": None,
+                    "has_menu_button": _count_in_any_frame("button.btn-reference") > 0,
+                    "has_subscriber_inputs": page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0,
+                    "has_login_button": page.locator("p.button a[title='ログイン']").count() > 0,
+                    "has_menu_link": page.locator("a[title='ネット投票メニューへ']").count() > 0,
+                    "has_error_like_text": page.locator(
+                        "text=誤り|text=エラー|text=入力|text=再入力|text=失敗|text=確認|text=有効"
+                    ).count()
+                    > 0,
+                    "error_texts": error_texts,
+                    "last_dialog": last_dialog_message.get("message"),
+                    "popup_url": last_popup_info.get("url"),
+                    "popup_title": last_popup_info.get("title"),
+                    "body_text_head": None,
+                    "frame_count": None,
+                    "frames": [],
+                }
+                try:
+                    debug["title"] = page.title()
+                except Exception:
+                    debug["title"] = None
+
+                try:
+                    # 画面テキストを少しだけ（数字はマスク）
+                    body_text = page.locator("body").inner_text(timeout=1000)
+                    debug["body_text_head"] = _mask_digits(body_text).strip().replace("\n\n", "\n")[:400]
+                except Exception:
+                    debug["body_text_head"] = None
+
+                try:
+                    frames = page.frames
+                    debug["frame_count"] = len(frames)
+                    # URL等は念のため短くする
+                    for fr in frames[:5]:
+                        try:
+                            fr_url = getattr(fr, "url", "") or ""
+                            debug["frames"].append(
+                                {
+                                    "name": getattr(fr, "name", "") or "",
+                                    "url": _mask_digits(fr_url)[:160],
+                                    "has_menu_button": (fr.locator("button.btn-reference").count() > 0),
+                                }
+                            )
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
+                logger.warning("Recent Step2 did not reach menu page within timeout. state=%s", debug)
+
+                # Optional: save artifacts if explicitly enabled (avoid leaking sensitive data by default)
+                if os.getenv("SAVE_DEBUG_ARTIFACTS", "false").lower() == "true":
                     try:
-                        candidates = page.locator(
-                            ".error, .err, .caution, .message, #error, #errmsg, [class*='error'], [id*='error']"
-                        )
-                        n = min(candidates.count(), 3)
-                        for i in range(n):
-                            t = candidates.nth(i).inner_text().strip()
-                            if t:
-                                error_texts.append(_mask_digits(t)[:200])
+                        with open("/tmp/debug_recent_step2_timeout.html", "w", encoding="utf-8") as f:
+                            f.write(page.content())
+                    except Exception:
+                        pass
+                    try:
+                        page.screenshot(path="/tmp/debug_recent_step2_timeout.png", full_page=True)
                     except Exception:
                         pass
 
-                    debug = {
-                        "url": getattr(page, "url", None),
-                        "title": None,
-                        "has_menu_button": _count_in_any_frame("button.btn-reference") > 0,
-                        "has_subscriber_inputs": page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0,
-                        "has_login_button": page.locator("p.button a[title='ログイン']").count() > 0,
-                        "has_menu_link": page.locator("a[title='ネット投票メニューへ']").count() > 0,
-                        "has_error_like_text": page.locator(
-                            "text=誤り|text=エラー|text=入力|text=再入力|text=失敗|text=確認|text=有効"
-                        ).count()
-                        > 0,
-                        "error_texts": error_texts,
-                        "last_dialog": last_dialog_message.get("message"),
-                        "popup_url": last_popup_info.get("url"),
-                        "popup_title": last_popup_info.get("title"),
-                        "body_text_head": None,
-                        "frame_count": None,
-                        "frames": [],
-                    }
-                    try:
-                        debug["title"] = page.title()
-                    except Exception:
-                        debug["title"] = None
-
-                    try:
-                        # 画面テキストを少しだけ（数字はマスク）
-                        body_text = page.locator("body").inner_text(timeout=1000)
-                        debug["body_text_head"] = _mask_digits(body_text).strip().replace("\n\n", "\n")[:400]
-                    except Exception:
-                        debug["body_text_head"] = None
-
-                    try:
-                        frames = page.frames
-                        debug["frame_count"] = len(frames)
-                        # URL等は念のため短くする
-                        for fr in frames[:5]:
-                            try:
-                                fr_url = getattr(fr, "url", "") or ""
-                                debug["frames"].append(
-                                    {
-                                        "name": getattr(fr, "name", "") or "",
-                                        "url": _mask_digits(fr_url)[:160],
-                                        "has_menu_button": (fr.locator("button.btn-reference").count() > 0),
-                                    }
-                                )
-                            except Exception:
-                                continue
-                    except Exception:
-                        pass
-
-                    logger.warning("Recent Step2 did not reach menu page within timeout. state=%s", debug)
-
-                    # Optional: save artifacts if explicitly enabled (avoid leaking sensitive data by default)
-                    if os.getenv("SAVE_DEBUG_ARTIFACTS", "false").lower() == "true":
-                        try:
-                            with open("/tmp/debug_recent_step2_timeout.html", "w", encoding="utf-8") as f:
-                                f.write(page.content())
-                        except Exception:
-                            pass
-                        try:
-                            page.screenshot(path="/tmp/debug_recent_step2_timeout.png", full_page=True)
-                        except Exception:
-                            pass
-
-                    raise
-
-                logger.info("Logging in to IPAT (Step 3: Vote History)...")
-                page.wait_for_load_state("networkidle")
-
-                # UI変更/文言差異に備えて複数候補を試す
-                history_candidates = [
-                    "button.btn-reference",
-                    "a:has-text('投票履歴')",
-                    "button:has-text('投票履歴')",
-                    "a:has-text('投票履歴一覧')",
-                    "button:has-text('投票履歴一覧')",
-                ]
-
-                clicked = False
-                for sel in history_candidates:
-                    if _wait_for_selector_any_frame(sel, timeout_ms=4000):
-                        if _click_first_in_any_frame(sel, timeout_ms=15000):
-                            clicked = True
-                            break
-
-                if not clicked:
-                    raise Exception("History entry not found/clickable (main or iframe)")
-                page.wait_for_selector("h1:has-text('投票履歴一覧')")
+                raise
 
                 logger.info("Checking for history items (Today & Yesterday)...")
                 target_days = [
