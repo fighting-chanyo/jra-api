@@ -536,6 +536,23 @@ def scrape_recent_history(creds: IpatAuth):
             context.route("**/*", _route_block_heavy_assets_modern)
             page = context.new_page()
 
+            last_dialog_message = {"message": None}
+
+            def _on_dialog(dialog):
+                try:
+                    msg = dialog.message
+                except Exception:
+                    msg = None
+                if msg:
+                    last_dialog_message["message"] = _mask_digits(str(msg))[:200]
+                    logger.warning("IPAT dialog detected (auto-accepted): %s", last_dialog_message["message"])
+                try:
+                    dialog.accept()
+                except Exception:
+                    pass
+
+            page.on("dialog", _on_dialog)
+
             try:
                 logger.info("Logging in to IPAT (Step 1: INET-ID)...")
                 page.goto("https://www.ipat.jra.go.jp/")
@@ -559,6 +576,7 @@ def scrape_recent_history(creds: IpatAuth):
                 before_url = page.url
                 # NOTE: modern側はSPA的な遷移で「navigation」が発生しない場合がある。
                 # expect_navigationで待つとハングすることがあるため、画面要素の出現で待機する。
+                page.wait_for_selector("a[title='ネット投票メニューへ']", timeout=15000)
                 menu_link = page.locator("a[title='ネット投票メニューへ']")
                 try:
                     menu_link.scroll_into_view_if_needed()
@@ -648,6 +666,7 @@ def scrape_recent_history(creds: IpatAuth):
                         ).count()
                         > 0,
                         "error_texts": error_texts,
+                        "last_dialog": last_dialog_message.get("message"),
                     }
                     try:
                         debug["title"] = page.title()
