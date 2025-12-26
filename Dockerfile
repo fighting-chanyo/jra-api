@@ -4,6 +4,9 @@ FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 # 作業ディレクトリを設定
 WORKDIR /app
 
+# Cloud Runでログを即時に出す（stdout/stderrのバッファリング回避）
+ENV PYTHONUNBUFFERED=1
+
 # 先にrequirements.txtをコピーしてインストール（キャッシュ効率化のため）
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

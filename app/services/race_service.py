@@ -1,10 +1,13 @@
 from datetime import date, datetime, timedelta, timezone
 import json
+import logging
 import time
 from app.scrapers.netkeiba_scraper import NetkeibaScraper
 from app.services.supabase_client import get_supabase_client
 from app.services.judgment_logic import JudgmentLogic
 from app.schemas import Race, PayoutData, Ticket
+
+logger = logging.getLogger(__name__)
 
 class RaceService:
     def __init__(self):
@@ -15,10 +18,10 @@ class RaceService:
         """
         指定年月のレーススケジュールを取り込み、DBに保存する
         """
-        print(f"📅 Importing schedule for {year}-{month}...")
+        logger.info("Importing schedule for %04d-%02d", year, month)
         try:
             races_data = self.scraper.scrape_monthly_schedule(year, month)
-            print(f"DEBUG: Scraped {len(races_data)} races.")
+            logger.info("Scraped %d races", len(races_data))
             
             # DBから既存データを取得して比較するための準備
             # 月の範囲を計算
@@ -77,27 +80,33 @@ class RaceService:
 
                 db_records.append(record)
             
-            print(f"DEBUG: Skipped {skipped_count} complete records. Upserting {len(db_records)} records.")
+            logger.info(
+                "Skipped %d complete records. Upserting %d records.",
+                skipped_count,
+                len(db_records),
+            )
             
             if db_records:
                 # バッチでUpsert (50件ずつ分割して送信)
-                print(f"   Upserting {len(db_records)} races...")
+                logger.info("Upserting %d races...", len(db_records))
                 
                 batch_size = 50
                 for i in range(0, len(db_records), batch_size):
                     batch = db_records[i:i + batch_size]
                     try:
                         self.supabase.table("races").upsert(batch).execute()
-                        print(f"   Upserted batch {i // batch_size + 1} ({len(batch)} records)")
+                        logger.info(
+                            "Upserted batch %d (%d records)",
+                            i // batch_size + 1,
+                            len(batch),
+                        )
                         time.sleep(1) # レート制限回避
                     except Exception as e:
-                        print(f"ERROR upserting batch {i // batch_size + 1}: {e}")
+                        logger.exception("Error upserting batch %d", i // batch_size + 1)
             
             return len(db_records)
         except Exception as e:
-            print(f"ERROR in import_schedule: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Error in import_schedule")
             return 0
 
     def update_results(self, target_date: date = None):
@@ -106,8 +115,8 @@ class RaceService:
         target_date: 指定がない場合は当日(date.today())
         """
         target_date = target_date or date.today()
-        
-        print(f"INFO: Starting result update process for target_date={target_date}...")
+
+        logger.info("Starting result update process for target_date=%s", target_date)
         
         # 1. DBから当日のレースを取得
         # 変更: status != 'FINISHED' のフィルタを外し、全レースを取得する。
@@ -116,7 +125,7 @@ class RaceService:
         races = res.data
         
         if not races:
-            print(f"INFO: No races found for {target_date}.")
+            logger.info("No races found for %s", target_date)
             return {"processed": 0, "hits": 0}
 
         processed_count = 0
@@ -145,7 +154,7 @@ class RaceService:
                         continue
                         
                 except ValueError as e:
-                    print(f"   ⚠️ Error parsing post_time for Race {race['id']}: {e}")
+                    logger.warning("Error parsing post_time for Race %s: %s", race.get("id"), e)
                     continue
 
             external_id = race.get("external_id")
@@ -186,17 +195,21 @@ class RaceService:
                 
                 try:
                     self.supabase.table("races").update(update_payload).eq("id", race["id"]).execute()
-                    print(f"INFO: Result found for race {race['id']}. Updated DB.")
+                    logger.info("Result found for race %s. Updated DB.", race["id"])
                     processed_count += 1
                 except Exception as e:
-                    print(f"ERROR updating race {race['id']}: {e}")
+                    logger.exception("Error updating race %s", race.get("id"))
 
             # 4. 的中判定 (result_dataがあれば実行)
             if result_data:
                 hits = self._process_hit_detection(race["id"], result_data)
                 total_hits += hits
 
-        print(f"INFO: Result update process completed. Processed: {processed_count}, Hits: {total_hits}")
+        logger.info(
+            "Result update process completed. Processed: %d, Hits: %d",
+            processed_count,
+            total_hits,
+        )
         return {"processed": processed_count, "hits": total_hits}
 
     def judge_existing_races(self, race_ids: list[str]):
@@ -207,7 +220,7 @@ class RaceService:
         if not race_ids:
             return
 
-        print(f"🔍 Checking for finished races among {len(race_ids)} IDs...")
+        logger.info("Checking for finished races among %d IDs...", len(race_ids))
         
         # Supabaseの `in` フィルタを使って一括取得
         # status='FINISHED' のものだけ取得
@@ -220,10 +233,10 @@ class RaceService:
             
             finished_races = res.data
             if not finished_races:
-                print("   No finished races found in the provided list.")
+                logger.info("No finished races found in the provided list.")
                 return
 
-            print(f"   Found {len(finished_races)} finished races. Running judgment...")
+            logger.info("Found %d finished races. Running judgment...", len(finished_races))
 
             for race in finished_races:
                 # DBのレコードから result_data を再構築
@@ -237,15 +250,18 @@ class RaceService:
                 
                 # 必須データが欠けていないか簡易チェック
                 if not (result_data["result_1st"] and result_data["payout_data"]):
-                    print(f"   ⚠️ Race {race['id']} is marked FINISHED but lacks result data.")
+                    logger.warning(
+                        "Race %s is marked FINISHED but lacks result data.",
+                        race.get("id"),
+                    )
                     continue
 
                 # 判定処理を実行
                 hits = self._process_hit_detection(race["id"], result_data)
-                print(f"   Race {race['id']}: Processed judgment. Hits: {hits}")
+                logger.info("Race %s: Processed judgment. Hits: %d", race["id"], hits)
 
         except Exception as e:
-            print(f"ERROR in judge_existing_races: {e}")
+            logger.exception("Error in judge_existing_races")
 
     def _process_hit_detection(self, race_id: str, result_data: dict):
         """
@@ -258,7 +274,7 @@ class RaceService:
         if not tickets:
             return 0
 
-        print(f"      Processing {len(tickets)} tickets for Race {race_id}...")
+        logger.info("Processing %d tickets for Race %s...", len(tickets), race_id)
         
         hit_count = 0
         payout_data_obj = PayoutData(**result_data["payout_data"])
@@ -269,7 +285,7 @@ class RaceService:
             r2 = int(result_data["result_2nd"])
             r3 = int(result_data["result_3rd"])
         except (ValueError, TypeError):
-            print("      ⚠️ Error parsing result horse numbers.")
+            logger.warning("Error parsing result horse numbers.")
             return 0
 
         for t_dict in tickets:
@@ -283,7 +299,7 @@ class RaceService:
             
             if status_to_update == "WIN":
                 hit_count += 1
-                print(f"         🎉 WIN! Ticket {ticket.id}: {payout} yen")
+                logger.info("WIN! Ticket %s: %s yen", ticket.id, payout)
             
             # チケット更新
             self.supabase.table("tickets").update({
