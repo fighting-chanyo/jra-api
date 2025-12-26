@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from datetime import datetime, timedelta
 import logging
 import threading
@@ -553,6 +554,60 @@ def scrape_recent_history(creds: IpatAuth):
 
             page.on("dialog", _on_dialog)
 
+            def _count_in_any_frame(selector: str) -> int:
+                total = 0
+                try:
+                    total += page.locator(selector).count()
+                except Exception:
+                    pass
+                try:
+                    for frame in page.frames:
+                        if frame == page.main_frame:
+                            continue
+                        try:
+                            total += frame.locator(selector).count()
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                return total
+
+            def _click_first_in_any_frame(selector: str, timeout_ms: int = 10000) -> bool:
+                try:
+                    loc = page.locator(selector)
+                    if loc.count() > 0:
+                        loc.first.click(timeout=timeout_ms)
+                        return True
+                except Exception:
+                    pass
+
+                try:
+                    for frame in page.frames:
+                        if frame == page.main_frame:
+                            continue
+                        try:
+                            loc = frame.locator(selector)
+                            if loc.count() > 0:
+                                loc.first.click(timeout=timeout_ms)
+                                return True
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
+                return False
+
+            def _wait_for_selector_any_frame(selector: str, timeout_ms: int) -> bool:
+                deadline = time.time() + (timeout_ms / 1000.0)
+                while time.time() < deadline:
+                    if _count_in_any_frame(selector) > 0:
+                        return True
+                    try:
+                        page.wait_for_timeout(250)
+                    except Exception:
+                        time.sleep(0.25)
+                return False
+
             try:
                 logger.info("Logging in to IPAT (Step 1: INET-ID)...")
                 page.goto("https://www.ipat.jra.go.jp/")
@@ -637,8 +692,9 @@ def scrape_recent_history(creds: IpatAuth):
                         }""",
                         timeout=25000,
                     )
-                    # ここでメニュー要素が出る想定（出ない場合はUI変更の可能性）
-                    page.wait_for_selector("button.btn-reference", timeout=15000)
+                    # ここでメニュー要素が出る想定（iframe内の可能性もあるため全frame対象）
+                    if not _wait_for_selector_any_frame("button.btn-reference", timeout_ms=15000):
+                        raise PlaywrightTimeoutError("menu button not found in any frame")
                 except PlaywrightTimeoutError:
                     # 失敗時に、画面内のエラーらしきテキストを(数字マスクして)少しだけ拾う
                     error_texts = []
@@ -657,7 +713,7 @@ def scrape_recent_history(creds: IpatAuth):
                     debug = {
                         "url": getattr(page, "url", None),
                         "title": None,
-                        "has_menu_button": page.locator("button.btn-reference").count() > 0,
+                        "has_menu_button": _count_in_any_frame("button.btn-reference") > 0,
                         "has_subscriber_inputs": page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0,
                         "has_login_button": page.locator("p.button a[title='ログイン']").count() > 0,
                         "has_menu_link": page.locator("a[title='ネット投票メニューへ']").count() > 0,
@@ -667,11 +723,32 @@ def scrape_recent_history(creds: IpatAuth):
                         > 0,
                         "error_texts": error_texts,
                         "last_dialog": last_dialog_message.get("message"),
+                        "frame_count": None,
+                        "frames": [],
                     }
                     try:
                         debug["title"] = page.title()
                     except Exception:
                         debug["title"] = None
+
+                    try:
+                        frames = page.frames
+                        debug["frame_count"] = len(frames)
+                        # URL等は念のため短くする
+                        for fr in frames[:5]:
+                            try:
+                                fr_url = getattr(fr, "url", "") or ""
+                                debug["frames"].append(
+                                    {
+                                        "name": getattr(fr, "name", "") or "",
+                                        "url": _mask_digits(fr_url)[:160],
+                                        "has_menu_button": (fr.locator("button.btn-reference").count() > 0),
+                                    }
+                                )
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
 
                     logger.warning("Recent Step2 did not reach menu page within timeout. state=%s", debug)
 
@@ -692,8 +769,10 @@ def scrape_recent_history(creds: IpatAuth):
                 logger.info("Logging in to IPAT (Step 3: Vote History)...")
                 page.wait_for_load_state("networkidle")
                 history_btn_selector = "button.btn-reference"
-                page.wait_for_selector(history_btn_selector)
-                page.click(history_btn_selector)
+                if not _wait_for_selector_any_frame(history_btn_selector, timeout_ms=15000):
+                    raise Exception("History button not found (main or iframe)")
+                if not _click_first_in_any_frame(history_btn_selector, timeout_ms=15000):
+                    raise Exception("Failed to click history button (main or iframe)")
                 page.wait_for_selector("h1:has-text('投票履歴一覧')")
 
                 logger.info("Checking for history items (Today & Yesterday)...")
