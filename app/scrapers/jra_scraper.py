@@ -547,16 +547,30 @@ def scrape_recent_history(creds: IpatAuth):
                 page.fill("input[name='i']", creds.subscriber_number.strip())
                 page.fill("input[name='p']", creds.password.strip())
                 page.fill("input[name='r']", creds.pars_number.strip())
+                # NOTE: modern側はSPA的な遷移で「navigation」が発生しない場合がある。
+                # expect_navigationで待つとハングすることがあるため、画面要素の出現で待機する。
+                menu_link = page.locator("a[title='ネット投票メニューへ']")
                 try:
-                    with page.expect_navigation(wait_until="domcontentloaded"):
-                        page.click("a[title='ネット投票メニューへ']", timeout=10000)
-                except Exception as e:
-                    # CSSブロック等で要素が不可視になるケースのフォールバック
-                    logger.warning("Menu link not clickable; fallback to ToModernMenu(): %s", e)
-                    with page.expect_navigation(wait_until="domcontentloaded"):
+                    menu_link.scroll_into_view_if_needed()
+                except Exception:
+                    pass
+                try:
+                    menu_link.click(timeout=10000)
+                except Exception as e1:
+                    logger.warning("Menu link not clickable (normal): %s", e1)
+                    try:
+                        # 不可視でもonclickを発火させたいケースがある
+                        menu_link.click(timeout=5000, force=True)
+                    except Exception as e2:
+                        logger.warning("Menu link not clickable (force): %s", e2)
+                        # 最後の手段: 直接JS関数を呼ぶ
                         page.evaluate(
                             "if (typeof ToModernMenu === 'function') { ToModernMenu(); } else { throw new Error('ToModernMenu not found'); }"
                         )
+
+                # メニュー画面に到達したことを、要素の出現で確認
+                # (ここが通れば次のStep3の待機も安定する)
+                page.wait_for_selector("button.btn-reference", timeout=15000)
 
                 logger.info("Logging in to IPAT (Step 3: Vote History)...")
                 page.wait_for_load_state("networkidle")
