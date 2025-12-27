@@ -14,7 +14,28 @@ from app.constants import BET_TYPE_MAP
 logger = logging.getLogger(__name__)
 
 
-_DIGITS_RE = re.compile(r"[0-9０-９]+");
+_DIGITS_RE = re.compile(r"[0-9０-９]+")
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return str(v).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)) or str(default))
+    except Exception:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)) or str(default))
+    except Exception:
+        return default
 
 
 def _mask_digits(text: str) -> str:
@@ -88,29 +109,15 @@ def _route_block_heavy_assets_modern(route):
     """
     try:
         req = route.request
-        if req.resource_type in ("image", "media", "font"):
+        # 直近サイトは画像を止めるとUIが壊れるケースがあるため、
+        # デフォルトは font/media のみブロックし、画像ブロックは明示指定にする。
+        block_images = _env_bool("IPAT_BLOCK_IMAGES", False)
+
+        rtype = getattr(req, "resource_type", None)
+        if rtype in ("media", "font"):
             route.abort()
             return
-        url = (req.url or "").lower()
-        if url.endswith(
-            (
-                ".png",
-                ".jpg",
-                ".jpeg",
-                ".gif",
-                ".webp",
-                ".svg",
-                ".woff",
-                ".woff2",
-                ".ttf",
-                ".otf",
-                ".mp4",
-                ".webm",
-                ".mp3",
-                ".m4a",
-                ".ogg",
-            )
-        ):
+        if block_images and rtype == "image":
             route.abort()
             return
         route.continue_()
@@ -119,6 +126,7 @@ def _route_block_heavy_assets_modern(route):
             route.continue_()
         except Exception:
             pass
+
 
 def scrape_past_history_csv(creds: IpatAuth):
     """PlaywrightによるスクレイピングとCSVパース処理を担う (旧sync_past_history)"""
@@ -251,6 +259,7 @@ def scrape_past_history_csv(creds: IpatAuth):
                     browser.close()
 
     return all_parsed_data
+
 
 def _parse_recent_detail_html(html_content, receipt_no, date_str):
     """直近投票履歴詳細HTMLをパースする"""
@@ -514,6 +523,7 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
         
     return parsed_tickets
 
+
 def scrape_recent_history(creds: IpatAuth):
     """Playwrightによるスクレイピング (Recent History Mode)"""
     logger.info("Accessing JRA IPAT (Recent History Mode)...")
@@ -521,9 +531,11 @@ def scrape_recent_history(creds: IpatAuth):
 
     with _playwright_slot():
         with sync_playwright() as p:
-            is_headless = os.getenv("HEADLESS", "true").lower() != "false"
+            is_headless = not _env_bool("HEADLESS", True)
+            slow_mo_ms = _env_int("PLAYWRIGHT_SLOW_MO_MS", 0)
             browser = p.chromium.launch(
                 headless=is_headless,
+                slow_mo=slow_mo_ms if slow_mo_ms > 0 else None,
                 args=[
                     "--disable-cache",
                     "--disk-cache-size=0",
@@ -534,8 +546,151 @@ def scrape_recent_history(creds: IpatAuth):
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
-            context.route("**/*", _route_block_heavy_assets_modern)
+            disable_blocking = _env_bool("DISABLE_RESOURCE_BLOCKING", False)
+            if disable_blocking:
+                logger.info("Resource blocking disabled (DISABLE_RESOURCE_BLOCKING=true)")
+            else:
+                context.route("**/*", _route_block_heavy_assets_modern)
             page = context.new_page()
+
+            save_artifacts = _env_bool("SAVE_DEBUG_ARTIFACTS", False)
+            trace_enabled = _env_bool("IPAT_TRACE", False)
+            trace_path = os.getenv("IPAT_TRACE_PATH", "/tmp/ipat_recent_trace.zip")
+            pause_at = (os.getenv("IPAT_DEBUG_PAUSE_AT", "") or "").strip()
+
+            # Heavy diagnostics are off by default; enable explicitly when debugging.
+            debug_log = _env_bool("IPAT_DEBUG_LOG", False) or save_artifacts or trace_enabled or bool(pause_at)
+            debug_log_console = _env_bool("IPAT_DEBUG_LOG_CONSOLE", False) or False
+            debug_log_frames = _env_bool("IPAT_DEBUG_LOG_FRAMES", False) or False
+            debug_log_requests = _env_bool("IPAT_DEBUG_LOG_REQUESTS", False) or False
+
+            # If IPAT_DEBUG_LOG is on, default to useful subsets.
+            if debug_log and not (debug_log_console or debug_log_frames or debug_log_requests):
+                debug_log_frames = True
+                debug_log_requests = True
+
+            # modern側は load/networkidle 待ちがハングすることがあるため、デフォルトの待ち時間を短めに設定
+            try:
+                page.set_default_timeout(30000)
+            except Exception:
+                pass
+            try:
+                page.set_default_navigation_timeout(30000)
+            except Exception:
+                pass
+
+            # --- Diagnostics (optional) ---
+            if debug_log_requests:
+                try:
+                    page.on(
+                        "requestfailed",
+                        lambda req: logger.warning(
+                            "requestfailed: method=%s url=%s err=%s",
+                            getattr(req, "method", None),
+                            _mask_digits(getattr(req, "url", "") or "")[:220],
+                            _mask_digits(getattr(getattr(req, "failure", None), "error_text", None) or "")[:200],
+                        ),
+                    )
+                except Exception:
+                    pass
+
+            if debug_log_console:
+                try:
+                    page.on(
+                        "console",
+                        lambda msg: logger.info(
+                            "console[%s]: %s",
+                            getattr(msg, "type", ""),
+                            _mask_digits(getattr(msg, "text", "") or "")[:300],
+                        ),
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    page.on(
+                        "pageerror",
+                        lambda err: logger.warning("pageerror: %s", _mask_digits(str(err))[:300]),
+                    )
+                except Exception:
+                    pass
+
+            if debug_log_frames:
+                try:
+                    page.on(
+                        "framenavigated",
+                        lambda frame: logger.info(
+                            "framenavigated: name=%s url=%s",
+                            getattr(frame, "name", "") or "",
+                            _mask_digits(getattr(frame, "url", "") or "")[:220],
+                        ),
+                    )
+                except Exception:
+                    pass
+
+            def _goto(url: str, label: str):
+                # modern側は `load`/`domcontentloaded` が発火しない・遅いケースがあり、goto待ちが固まりやすい。
+                # まず `commit` まで待って「通信できているか」を確定し、domcontentloaded は短めに待ってダメなら先に進む。
+                timeout_ms = _env_int("IPAT_GOTO_TIMEOUT_MS", 45000)
+                if debug_log_frames:
+                    logger.info("goto(%s): %s", label, url)
+                resp = page.goto(url, wait_until="commit", timeout=timeout_ms)
+                try:
+                    status = getattr(resp, "status", None)
+                    resp_url = getattr(resp, "url", None)
+                    if debug_log_frames:
+                        logger.info(
+                            "goto(%s) committed. status=%s url=%s",
+                            label,
+                            status,
+                            _mask_digits(str(resp_url or ""))[:220],
+                        )
+                except Exception:
+                    if debug_log_frames:
+                        logger.info("goto(%s) committed.", label)
+
+                # domcontentloaded は任意（固まり回避優先）
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=min(timeout_ms, 15000))
+                except Exception as e:
+                    if debug_log_frames:
+                        logger.warning("goto(%s) domcontentloaded not reached (continuing): %s", label, e)
+
+                # Optional artifacts
+                if save_artifacts:
+                    try:
+                        page.screenshot(path=f"/tmp/debug_goto_{label}.png", full_page=True)
+                    except Exception:
+                        pass
+                    try:
+                        with open(f"/tmp/debug_goto_{label}.html", "w", encoding="utf-8") as f:
+                            f.write(page.content())
+                    except Exception:
+                        pass
+
+                return resp
+
+            def _debug_pause(label: str):
+                # 例: IPAT_DEBUG_PAUSE_AT="step1,step2,history"
+                if not pause_at:
+                    return
+                tokens = {t.strip().lower() for t in pause_at.split(",") if t.strip()}
+                if label.lower() in tokens or "all" in tokens:
+                    try:
+                        if debug_log:
+                            logger.info("Debug pause at '%s' (PWDEBUG推奨)", label)
+                        page.pause()
+                    except Exception:
+                        # pauseできない環境でも落とさない
+                        pass
+
+            if trace_enabled:
+                try:
+                    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+                    if debug_log:
+                        logger.info("Tracing enabled. trace_path='%s'", trace_path)
+                except Exception as e:
+                    logger.warning("Failed to start tracing: %s", e)
 
             last_dialog_message = {"message": None}
 
@@ -589,14 +744,16 @@ def scrape_recent_history(creds: IpatAuth):
                     new_page = None
                 if new_page and new_page != page:
                     try:
-                        logger.info(
-                            "Switching to popup page (%s). url='%s' title='%s'",
-                            reason,
-                            last_popup_info.get("url"),
-                            last_popup_info.get("title"),
-                        )
+                        if debug_log:
+                            logger.info(
+                                "Switching to popup page (%s). url='%s' title='%s'",
+                                reason,
+                                last_popup_info.get("url"),
+                                last_popup_info.get("title"),
+                            )
                     except Exception:
-                        logger.info("Switching to popup page (%s).", reason)
+                        if debug_log:
+                            logger.info("Switching to popup page (%s).", reason)
                     page = new_page
 
             def _count_in_any_frame(selector: str) -> int:
@@ -690,13 +847,15 @@ def scrape_recent_history(creds: IpatAuth):
                         except Exception:
                             pass
                         try:
-                            page.goto("https://www.ipat.jra.go.jp/", wait_until="domcontentloaded")
+                            _goto("https://www.ipat.jra.go.jp/", "retry-initial")
                             page.wait_for_timeout(1200)
                         except Exception:
                             pass
 
                     logger.info("Logging in to IPAT (Step 1: INET-ID)...")
-                    page.goto("https://www.ipat.jra.go.jp/")
+                    _goto("https://www.ipat.jra.go.jp/", "step1")
+
+                    _debug_pause("step1")
 
                     if page.locator("text=ただいまの時間は投票受付時間外です。").is_visible():
                         raise Exception("JRA IPAT is currently closed.")
@@ -711,6 +870,8 @@ def scrape_recent_history(creds: IpatAuth):
 
                     logger.info("Logging in to IPAT (Step 2: Subscriber Info)...")
                     page.wait_for_selector("input[name='i']")
+
+                    _debug_pause("step2")
                     page.fill("input[name='i']", creds.subscriber_number.strip())
                     page.fill("input[name='p']", creds.password.strip())
                     page.fill("input[name='r']", creds.pars_number.strip())
@@ -811,6 +972,8 @@ def scrape_recent_history(creds: IpatAuth):
 
                     logger.info("Logging in to IPAT (Step 3: Vote History)...")
                     page.wait_for_load_state("networkidle")
+
+                    _debug_pause("history")
 
                     # UI変更/文言差異に備えて複数候補を試す
                     history_candidates = [
@@ -913,7 +1076,7 @@ def scrape_recent_history(creds: IpatAuth):
                 logger.warning("Recent Step2 did not reach menu page within timeout. state=%s", debug)
 
                 # Optional: save artifacts if explicitly enabled (avoid leaking sensitive data by default)
-                if os.getenv("SAVE_DEBUG_ARTIFACTS", "false").lower() == "true":
+                if save_artifacts:
                     try:
                         with open("/tmp/debug_recent_step2_timeout.html", "w", encoding="utf-8") as f:
                             f.write(page.content())
@@ -1020,6 +1183,23 @@ def scrape_recent_history(creds: IpatAuth):
                                 page.wait_for_selector("h1:has-text('投票履歴一覧')")
 
             finally:
+                # デバッグ用: 画面確認のため終了を遅らせる
+                keep_open_sec = _env_float("IPAT_DEBUG_KEEP_OPEN_SEC", 0.0)
+                if keep_open_sec > 0:
+                    try:
+                        if debug_log:
+                            logger.info("Keeping browser open for %.1fs for debugging...", keep_open_sec)
+                        page.wait_for_timeout(int(keep_open_sec * 1000))
+                    except Exception:
+                        time.sleep(keep_open_sec)
+
+                if trace_enabled:
+                    try:
+                        context.tracing.stop(path=trace_path)
+                        if debug_log:
+                            logger.info("Tracing saved. trace_path='%s'", trace_path)
+                    except Exception as e:
+                        logger.warning("Failed to stop/save tracing: %s", e)
                 try:
                     context.close()
                 finally:
