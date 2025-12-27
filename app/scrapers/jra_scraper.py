@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 _DIGITS_RE = re.compile(r"[0-9０-９]+")
 
 
+_FW_TO_HW_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
+
+
 _JP_WEEKDAY_TO_PY = {"月": 0, "火": 1, "水": 2, "木": 3, "金": 4, "土": 5, "日": 6}
 
 
@@ -91,6 +94,12 @@ def _mask_digits(text: str) -> str:
     if not text:
         return text
     return _DIGITS_RE.sub("X", text)
+
+
+def _normalize_receipt_no(receipt_no: object) -> str:
+    if receipt_no is None:
+        return ""
+    return str(receipt_no).strip().translate(_FW_TO_HW_DIGITS)
 
 
 _PLAYWRIGHT_MAX_CONCURRENCY = int(os.getenv("PLAYWRIGHT_MAX_CONCURRENCY", "1") or "1")
@@ -548,10 +557,14 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str, prefer_future:
     return parsed_tickets
 
 
-def scrape_recent_history(creds: IpatAuth):
+def scrape_recent_history(creds: IpatAuth, *, skip_receipt_nos: Optional[set[str]] = None):
     """Playwrightによるスクレイピング (Recent History Mode)"""
     logger.info("Accessing JRA IPAT (Recent History Mode)...")
     all_parsed_data = []
+
+    normalized_skip: set[str] = set()
+    if skip_receipt_nos:
+        normalized_skip = {_normalize_receipt_no(x) for x in skip_receipt_nos if _normalize_receipt_no(x)}
 
     with _playwright_slot():
         with sync_playwright() as p:
@@ -1228,6 +1241,11 @@ def scrape_recent_history(creds: IpatAuth):
                             if "投票履歴がありません" not in row.inner_html():
                                 html = row.inner_html()
                                 logger.debug("Row HTML (truncated): %s", html[:1000])
+                            continue
+
+                        normalized_receipt_no = _normalize_receipt_no(receipt_no)
+                        if normalized_skip and normalized_receipt_no in normalized_skip:
+                            logger.info("Skipping already imported receipt: %s", receipt_no)
                             continue
 
                         logger.info("Processing Receipt: %s", receipt_no)

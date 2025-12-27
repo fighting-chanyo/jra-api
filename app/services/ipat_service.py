@@ -6,6 +6,12 @@ from app.schemas import IpatAuth
 from app.services.supabase_client import get_supabase_client
 from app.constants import RACE_COURSE_MAP
 from app.scrapers.jra_scraper import scrape_past_history_csv, scrape_recent_history
+from app.services.ipat_section import compute_current_section_from_races
+from app.services.ipat_section_receipts import (
+    get_existing_section_receipts,
+    normalize_receipt_no as _normalize_section_receipt_no,
+    record_section_receipts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -314,8 +320,41 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
     logger.info("IPAT recent sync started log_id=%s user_id=%s", log_id, user_id)
 
     try:
-        # 1. スクレイピングとパース
-        parsed_tickets = scrape_recent_history(creds)
+        # 0. 今節を推定し、今節×受付番号で既取り込み分をスキップする
+        skip_receipts: set[str] = set()
+        section_id: str | None = None
+        try:
+            section = compute_current_section_from_races(supabase=supabase)
+            if section:
+                section_id = section.section_id
+                try:
+                    skip_receipts = get_existing_section_receipts(
+                        supabase=supabase,
+                        user_id=user_id,
+                        section_id=section_id,
+                    )
+                    if skip_receipts:
+                        logger.info(
+                            "Section-based skip enabled. section_id=%s existing_receipts=%d",
+                            section_id,
+                            len(skip_receipts),
+                        )
+                    else:
+                        logger.info("Section-based skip enabled. section_id=%s existing_receipts=0", section_id)
+                except Exception as e:
+                    # テーブル未作成/権限/一時障害などでも従来フローで継続
+                    logger.warning(
+                        "Failed to load existing section receipts (skip disabled). section_id=%s err=%s",
+                        section_id,
+                        e,
+                    )
+            else:
+                logger.info("Could not compute current section from races (skip disabled).")
+        except Exception as e:
+            logger.warning("Failed to compute current section (skip disabled): %s", e)
+
+        # 1. スクレイピングとパース（既取り込み受付番号はクリックしない）
+        parsed_tickets = scrape_recent_history(creds, skip_receipt_nos=skip_receipts or None)
         
         # 2. DB形式への変換
         db_records = [_map_ticket_to_db_format(t, user_id) for t in parsed_tickets]
@@ -351,6 +390,29 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
         if insert_records:
             # 既存IDは除外済みなので conflict は基本起きない。安全のためupsertを使う。
             supabase.table("tickets").upsert(insert_records, on_conflict="receipt_unique_id").execute()
+
+        # 4. 今節×受付番号の記録（recent経由のみ。past由来は参照しない）
+        if section_id and parsed_tickets:
+            try:
+                scraped_receipts = {
+                    _normalize_section_receipt_no((t.get("raw") or {}).get("receipt_no")) for t in parsed_tickets
+                }
+                scraped_receipts.discard("")
+                if scraped_receipts:
+                    recorded = record_section_receipts(
+                        supabase=supabase,
+                        user_id=user_id,
+                        section_id=section_id,
+                        receipt_nos=scraped_receipts,
+                    )
+                    logger.info(
+                        "Recorded section receipts. section_id=%s receipts=%d",
+                        section_id,
+                        recorded,
+                    )
+            except Exception as e:
+                # 記録に失敗しても同期自体は継続（次回はスキップ効率が落ちるだけ）
+                logger.warning("Failed to record section receipts: %s", e)
 
         # --- 即時判定処理 (結果確定済みのレースがあれば判定) ---
         try:
