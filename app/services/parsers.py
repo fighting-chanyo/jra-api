@@ -33,8 +33,8 @@ def parse_jra_csv(csv_path):
         col_map = {name: i for i, name in enumerate(header)}
         logger.info("CSV Header mapped: %s", list(col_map.keys()))
 
-        current_receipt_no = None
-        current_line_counter = 0
+        # 受付番号ごとの通番を管理する辞書
+        receipt_counters = {}
 
         for row in data_rows:
             # 【修正】行のいずれかのセルに「合計」が含まれていたらスキップする
@@ -42,11 +42,13 @@ def parse_jra_csv(csv_path):
                 continue
             
             receipt_no = row[col_map["受付番号"]]
-            if receipt_no != current_receipt_no:
-                current_receipt_no = receipt_no
-                current_line_counter = 1
-            else:
-                current_line_counter += 1
+            
+            # 受付番号ごとにカウンタをインクリメント
+            if receipt_no not in receipt_counters:
+                receipt_counters[receipt_no] = 0
+            receipt_counters[receipt_no] += 1
+            
+            current_line_counter = receipt_counters[receipt_no]
 
             try:
                 # 購入金額 (単価と合計)
