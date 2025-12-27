@@ -832,6 +832,58 @@ def scrape_recent_history(creds: IpatAuth):
             class _IpatRestartRequired(Exception):
                 pass
 
+            def _best_effort_clear_site_storage():
+                """cookie以外のブラウザ状態も可能な範囲でクリアする。
+
+                Cloud Run上での断続的な「初期画面からINET-ID…」(restart notice) は
+                cookieだけでは解消しないケースがあるため、local/session storage や
+                SW/caches/IndexedDBをベストエフォートで消す。
+                """
+                try:
+                    page.evaluate(
+                        """() => {
+                            try { localStorage && localStorage.clear(); } catch (e) {}
+                            try { sessionStorage && sessionStorage.clear(); } catch (e) {}
+                        }"""
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    page.evaluate(
+                        """() => {
+                            try {
+                                if (navigator && navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+                                    navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
+                                }
+                            } catch (e) {}
+                            try {
+                                if (typeof caches !== 'undefined' && caches.keys) {
+                                    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
+                                }
+                            } catch (e) {}
+                        }"""
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    page.evaluate(
+                        """() => {
+                            try {
+                                if (typeof indexedDB !== 'undefined' && indexedDB.databases) {
+                                    indexedDB.databases().then(dbs => {
+                                        (dbs || []).forEach(db => {
+                                            try { if (db && db.name) { indexedDB.deleteDatabase(db.name); } } catch (e) {}
+                                        });
+                                    }).catch(() => {});
+                                }
+                            } catch (e) {}
+                        }"""
+                    )
+                except Exception:
+                    pass
+
             try:
                 try:
                     login_retries = int(os.getenv("IPAT_RECENT_LOGIN_RETRIES", "1") or "1")
@@ -853,155 +905,168 @@ def scrape_recent_history(creds: IpatAuth):
                             pass
                         try:
                             _goto("https://www.ipat.jra.go.jp/", "retry-initial")
+                            _best_effort_clear_site_storage()
                             page.wait_for_timeout(1200)
                         except Exception:
                             pass
 
-                    logger.info("Logging in to IPAT (Step 1: INET-ID)...")
-                    _goto("https://www.ipat.jra.go.jp/", "step1")
-
-                    _debug_pause("step1")
-
-                    if page.locator("text=ただいまの時間は投票受付時間外です。").is_visible():
-                        raise Exception("JRA IPAT is currently closed.")
-
-                    inet_id = creds.inet_id.strip()
-                    if not inet_id:
-                        raise Exception("INET-ID is missing")
-
-                    page.fill("input[name='inetid']", inet_id)
-                    with page.expect_navigation(wait_until="domcontentloaded"):
-                        page.click("p.button a[title='ログイン']")
-
-                    logger.info("Logging in to IPAT (Step 2: Subscriber Info)...")
-                    page.wait_for_selector("input[name='i']")
-
-                    _debug_pause("step2")
-                    page.fill("input[name='i']", creds.subscriber_number.strip())
-                    page.fill("input[name='p']", creds.password.strip())
-                    page.fill("input[name='r']", creds.pars_number.strip())
-                    before_url = page.url
-                    # NOTE: modern側はSPA的な遷移で「navigation」が発生しない場合がある。
-                    # expect_navigationで待つとハングすることがあるため、画面要素の出現で待機する。
-                    page.wait_for_selector("a[title='ネット投票メニューへ']", timeout=15000)
-                    menu_link = page.locator("a[title='ネット投票メニューへ']")
                     try:
-                        menu_link.scroll_into_view_if_needed()
-                    except Exception:
-                        pass
-                    try:
-                        menu_link.click(timeout=10000)
-                    except Exception as e1:
-                        logger.warning("Menu link not clickable (normal): %s", e1)
+                        logger.info("Logging in to IPAT (Step 1: INET-ID)...")
+                        _goto("https://www.ipat.jra.go.jp/", "step1")
+
+                        _debug_pause("step1")
+
+                        if page.locator("text=ただいまの時間は投票受付時間外です。").is_visible():
+                            raise Exception("JRA IPAT is currently closed.")
+
+                        inet_id = creds.inet_id.strip()
+                        if not inet_id:
+                            raise Exception("INET-ID is missing")
+
+                        page.fill("input[name='inetid']", inet_id)
+                        with page.expect_navigation(wait_until="domcontentloaded"):
+                            page.click("p.button a[title='ログイン']")
+
+                        logger.info("Logging in to IPAT (Step 2: Subscriber Info)...")
+                        page.wait_for_selector("input[name='i']")
+
+                        _debug_pause("step2")
+                        page.fill("input[name='i']", creds.subscriber_number.strip())
+                        page.fill("input[name='p']", creds.password.strip())
+                        page.fill("input[name='r']", creds.pars_number.strip())
+                        before_url = page.url
+                        # NOTE: modern側はSPA的な遷移で「navigation」が発生しない場合がある。
+                        # expect_navigationで待つとハングすることがあるため、画面要素の出現で待機する。
+                        page.wait_for_selector("a[title='ネット投票メニューへ']", timeout=15000)
+                        menu_link = page.locator("a[title='ネット投票メニューへ']")
                         try:
-                            # 不可視でもonclickを発火させたいケースがある
-                            menu_link.click(timeout=5000, force=True)
-                        except Exception as e2:
-                            logger.warning("Menu link not clickable (force): %s", e2)
-                            # 最後の手段: 直接JS関数を呼ぶ
-                            page.evaluate(
-                                "if (typeof ToModernMenu === 'function') { ToModernMenu(); } else { throw new Error('ToModernMenu not found'); }"
+                            menu_link.scroll_into_view_if_needed()
+                        except Exception:
+                            pass
+                        try:
+                            menu_link.click(timeout=10000)
+                        except Exception as e1:
+                            logger.warning("Menu link not clickable (normal): %s", e1)
+                            try:
+                                # 不可視でもonclickを発火させたいケースがある
+                                menu_link.click(timeout=5000, force=True)
+                            except Exception as e2:
+                                logger.warning("Menu link not clickable (force): %s", e2)
+                                # 最後の手段: 直接JS関数を呼ぶ
+                                page.evaluate(
+                                    "if (typeof ToModernMenu === 'function') { ToModernMenu(); } else { throw new Error('ToModernMenu not found'); }"
+                                )
+
+                        # 別タブ/ポップアップが開いた場合はそちらに切替
+                        try:
+                            page.wait_for_timeout(1000)
+                        except Exception:
+                            pass
+                        _adopt_popup_if_any("after menu action")
+
+                        # 画面がJS/非同期で切り替わる場合があるため、一旦待つ
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=10000)
+                        except Exception:
+                            pass
+
+                        # ここで「初期画面からINET-IDを…」案内に落ちるケースがあるため早期検知
+                        if _is_restart_notice():
+                            raise _IpatRestartRequired("restart notice shown after menu action")
+
+                        # まだ加入者入力画面のままなら、フォームsubmitも試す（リンク/JSが効かないケース向け）
+                        try:
+                            still_on_subscriber = (
+                                "pw_080_i.cgi" in (page.url or "")
+                                and page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0
                             )
+                        except Exception:
+                            still_on_subscriber = False
 
-                    # 別タブ/ポップアップが開いた場合はそちらに切替
-                    try:
-                        page.wait_for_timeout(1000)
-                    except Exception:
-                        pass
-                    _adopt_popup_if_any("after menu action")
+                        if still_on_subscriber:
+                            logger.warning(
+                                "Still on subscriber page after menu action. url(before)='%s' url(after)='%s' - trying form submit.",
+                                before_url,
+                                getattr(page, "url", None),
+                            )
+                            try:
+                                # 入力欄の属するformをsubmitする
+                                page.eval_on_selector("input[name='r']", "el => el.form && el.form.submit()")
+                            except Exception as e:
+                                logger.warning("Form submit fallback failed: %s", e)
 
-                    # 画面がJS/非同期で切り替わる場合があるため、一旦待つ
-                    try:
-                        page.wait_for_load_state("networkidle", timeout=10000)
-                    except Exception:
-                        pass
-
-                    # ここで「初期画面からINET-IDを…」案内に落ちるケースがあるため早期検知
-                    if _is_restart_notice():
-                        raise _IpatRestartRequired("restart notice shown after menu action")
-
-                    # まだ加入者入力画面のままなら、フォームsubmitも試す（リンク/JSが効かないケース向け）
-                    try:
-                        still_on_subscriber = (
-                            "pw_080_i.cgi" in (page.url or "")
-                            and page.locator("input[name='i'], input[name='p'], input[name='r']").count() > 0
-                        )
-                    except Exception:
-                        still_on_subscriber = False
-
-                    if still_on_subscriber:
-                        logger.warning(
-                            "Still on subscriber page after menu action. url(before)='%s' url(after)='%s' - trying form submit.",
-                            before_url,
-                            getattr(page, "url", None),
-                        )
+                        # submitで別ページが開くパターンもある
                         try:
-                            # 入力欄の属するformをsubmitする
-                            page.eval_on_selector("input[name='r']", "el => el.form && el.form.submit()")
-                        except Exception as e:
-                            logger.warning("Form submit fallback failed: %s", e)
+                            page.wait_for_timeout(1000)
+                        except Exception:
+                            pass
+                        _adopt_popup_if_any("after submit fallback")
 
-                    # submitで別ページが開くパターンもある
-                    try:
-                        page.wait_for_timeout(1000)
-                    except Exception:
-                        pass
-                    _adopt_popup_if_any("after submit fallback")
+                        if _is_restart_notice():
+                            raise _IpatRestartRequired("restart notice shown after submit fallback")
 
-                    if _is_restart_notice():
-                        raise _IpatRestartRequired("restart notice shown after submit fallback")
+                        # メニュー画面に到達したことを、複合条件で判定
+                        # - URLが変わる
+                        # - 加入者入力欄が消える
+                        # - メニュー要素が出る
+                        try:
+                            page.wait_for_function(
+                                """() => {
+                                    const urlChanged = !location.href.includes('pw_080_i.cgi');
+                                    const hasInputs = !!document.querySelector("input[name='i'], input[name='p'], input[name='r']");
+                                    const hasMenuBtn = !!document.querySelector('button.btn-reference');
+                                    return urlChanged || !hasInputs || hasMenuBtn;
+                                }""",
+                                timeout=25000,
+                            )
+                        except Exception:
+                            pass
 
-                    # メニュー画面に到達したことを、複合条件で判定
-                    # - URLが変わる
-                    # - 加入者入力欄が消える
-                    # - メニュー要素が出る
-                    try:
-                        page.wait_for_function(
-                            """() => {
-                                const urlChanged = !location.href.includes('pw_080_i.cgi');
-                                const hasInputs = !!document.querySelector("input[name='i'], input[name='p'], input[name='r']");
-                                const hasMenuBtn = !!document.querySelector('button.btn-reference');
-                                return urlChanged || !hasInputs || hasMenuBtn;
-                            }""",
-                            timeout=25000,
-                        )
-                    except Exception:
-                        pass
+                        if _is_restart_notice():
+                            raise _IpatRestartRequired("restart notice shown during menu wait")
 
-                    if _is_restart_notice():
-                        raise _IpatRestartRequired("restart notice shown during menu wait")
+                        # ここでメニュー要素が出る想定（iframe内の可能性もあるため全frame対象）
+                        if not _wait_for_selector_any_frame("button.btn-reference", timeout_ms=15000):
+                            raise PlaywrightTimeoutError("menu button not found in any frame")
 
-                    # ここでメニュー要素が出る想定（iframe内の可能性もあるため全frame対象）
-                    if not _wait_for_selector_any_frame("button.btn-reference", timeout_ms=15000):
-                        raise PlaywrightTimeoutError("menu button not found in any frame")
+                        logger.info("Logging in to IPAT (Step 3: Vote History)...")
+                        page.wait_for_load_state("networkidle")
 
-                    logger.info("Logging in to IPAT (Step 3: Vote History)...")
-                    page.wait_for_load_state("networkidle")
+                        _debug_pause("history")
 
-                    _debug_pause("history")
+                        # UI変更/文言差異に備えて複数候補を試す
+                        history_candidates = [
+                            "button.btn-reference",
+                            "a:has-text('投票履歴')",
+                            "button:has-text('投票履歴')",
+                            "a:has-text('投票履歴一覧')",
+                            "button:has-text('投票履歴一覧')",
+                        ]
 
-                    # UI変更/文言差異に備えて複数候補を試す
-                    history_candidates = [
-                        "button.btn-reference",
-                        "a:has-text('投票履歴')",
-                        "button:has-text('投票履歴')",
-                        "a:has-text('投票履歴一覧')",
-                        "button:has-text('投票履歴一覧')",
-                    ]
+                        clicked = False
+                        for sel in history_candidates:
+                            if _wait_for_selector_any_frame(sel, timeout_ms=4000):
+                                if _click_first_in_any_frame(sel, timeout_ms=15000):
+                                    clicked = True
+                                    break
 
-                    clicked = False
-                    for sel in history_candidates:
-                        if _wait_for_selector_any_frame(sel, timeout_ms=4000):
-                            if _click_first_in_any_frame(sel, timeout_ms=15000):
-                                clicked = True
-                                break
+                        if not clicked:
+                            raise Exception("History entry not found/clickable (main or iframe)")
+                        page.wait_for_selector("h1:has-text('投票履歴一覧')")
 
-                    if not clicked:
-                        raise Exception("History entry not found/clickable (main or iframe)")
-                    page.wait_for_selector("h1:has-text('投票履歴一覧')")
+                        # ここまで来ればログイン成功
+                        break
 
-                    # ここまで来ればログイン成功
-                    break
+                    except _IpatRestartRequired as e:
+                        if attempt < login_retries:
+                            logger.warning(
+                                "IPAT restart notice detected; will reset and retry. attempt=%d/%d detail=%s",
+                                attempt + 1,
+                                login_retries + 1,
+                                e,
+                            )
+                            continue
+                        raise
 
                 else:
                     raise Exception("Recent login retry loop exhausted")
