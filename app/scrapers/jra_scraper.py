@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import logging
 import threading
 from contextlib import contextmanager
+from typing import Optional
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from app.schemas import IpatAuth
@@ -15,6 +16,54 @@ logger = logging.getLogger(__name__)
 
 
 _DIGITS_RE = re.compile(r"[0-9０-９]+")
+
+
+_JP_WEEKDAY_TO_PY = {"月": 0, "火": 1, "水": 2, "木": 3, "金": 4, "土": 5, "日": 6}
+
+
+def _infer_recent_race_date_from_weekday(
+    reference_yyyymmdd: str,
+    jp_weekday: str,
+    *,
+    prefer_future: bool,
+    max_days: int = 7,
+) -> Optional[str]:
+    """recent詳細には開催日の明示が無いので、参照日と曜日から開催日を推定する。
+
+    - Yesterdayタブ: 未来馬券は出ない前提のため「過去優先」
+    - Todayタブ: 当日・翌日など未来馬券が混ざり得るため「未来優先」
+
+    max_days は「1週間後など遠未来」を誤推定しないための上限。
+    """
+    if not reference_yyyymmdd or not jp_weekday:
+        return None
+    target_weekday = _JP_WEEKDAY_TO_PY.get(jp_weekday)
+    if target_weekday is None:
+        return None
+    try:
+        ref = datetime.strptime(reference_yyyymmdd, "%Y%m%d")
+    except Exception:
+        return None
+
+    def _search(deltas) -> Optional[str]:
+        for delta in deltas:
+            cand = ref + timedelta(days=delta)
+            if cand.weekday() == target_weekday:
+                return cand.strftime("%Y%m%d")
+        return None
+
+    if prefer_future:
+        # 参照日以降(当日含む)を優先し、見つからなければ直近過去
+        found = _search(range(0, max_days + 1))
+        if found:
+            return found
+        return _search(range(-1, -(max_days + 1), -1))
+
+    # 過去優先（参照日含む）
+    found = _search(range(0, -(max_days + 1), -1))
+    if found:
+        return found
+    return _search(range(1, max_days + 1))
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -261,7 +310,7 @@ def scrape_past_history_csv(creds: IpatAuth):
     return all_parsed_data
 
 
-def _parse_recent_detail_html(html_content, receipt_no, date_str):
+def _parse_recent_detail_html(html_content, receipt_no, date_str, prefer_future: bool):
     """直近投票履歴詳細HTMLをパースする"""
     soup = BeautifulSoup(html_content, "html.parser")
     parsed_tickets = []
@@ -294,38 +343,13 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str):
         
         calculated_date_str = date_str
         if race_weekday_str:
-            try:
-                # 節のアンカー日（土曜日）を基準に日付を決定するロジック
-                # 1. スクレイプ実行日(D)を基準にする
-                scrape_date = datetime.now()
-                scrape_weekday = scrape_date.weekday() # Mon=0, ..., Sun=6
-                
-                # 2. Dに最も近い土曜日(S)を求める
-                # 土曜=5. offset = (5 - scrape_weekday + 3) % 7 - 3
-                # 月(0) -> -2 (前の土曜), 金(4) -> +1 (次の土曜), 土(5) -> 0, 日(6) -> -1 (前の土曜)
-                offset_to_saturday = (5 - scrape_weekday + 3) % 7 - 3
-                anchor_saturday = scrape_date + timedelta(days=offset_to_saturday)
-                
-                # 3. レース開催日のオフセットを計算
-                # 金: -1, 土: 0, 日: 1, 月: 2, 火: 3
-                target_weekday_map = {'金': -1, '土': 0, '日': 1, '月': 2, '火': 3}
-                
-                if race_weekday_str in target_weekday_map:
-                    day_diff = target_weekday_map[race_weekday_str]
-                    race_date = anchor_saturday + timedelta(days=day_diff)
-                    calculated_date_str = race_date.strftime("%Y%m%d")
-                else:
-                    # フォールバック: 従来のマッピング（水・木など）
-                    # 基本的にあり得ないが、念のため当日か未来の直近の日付とする
-                    weekday_map = {'水': 2, '木': 3}
-                    if race_weekday_str in weekday_map:
-                        base_weekday = scrape_weekday
-                        target_weekday = weekday_map[race_weekday_str]
-                        diff_days = (target_weekday - base_weekday + 7) % 7
-                        race_date = scrape_date + timedelta(days=diff_days)
-                        calculated_date_str = race_date.strftime("%Y%m%d")
-            except Exception as e:
-                print(f"⚠️ Date calculation failed: {e}")
+            inferred = _infer_recent_race_date_from_weekday(
+                date_str,
+                race_weekday_str,
+                prefer_future=prefer_future,
+            )
+            if inferred:
+                calculated_date_str = inferred
 
         # Parse Race No
         race_no_match = re.search(r"(\d+)R", text_content)
@@ -1230,7 +1254,7 @@ def scrape_recent_history(creds: IpatAuth):
                         if is_detail_loaded:
                             content = page.content()
                             try:
-                                parsed = _parse_recent_detail_html(content, receipt_no, date_str)
+                                parsed = _parse_recent_detail_html(content, receipt_no, date_str, day_name == "Today")
                                 all_parsed_data.extend(parsed)
                                 logger.info("Extracted %d tickets.", len(parsed))
                             except Exception as e:

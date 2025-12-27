@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from app.services.ipat_service import _map_ticket_to_db_format, sync_and_save_past_history
+from app.services.ipat_service import _map_ticket_to_db_format, sync_and_save_past_history, sync_and_save_recent_history
 from app.schemas import IpatAuth
 
 # Sample data for testing
@@ -125,3 +125,32 @@ def test_sync_and_save_past_history_error(mock_scrape, mock_get_client):
     last_call_args = update_call.call_args[0][0]
     assert last_call_args["status"] == "ERROR"
     assert "ログインに失敗しました" in last_call_args["message"]
+
+
+@patch("app.services.ipat_service.get_supabase_client")
+@patch("app.services.ipat_service.scrape_recent_history")
+@patch("app.services.race_service.RaceService")
+def test_sync_and_save_recent_history_skip_existing(mock_race_service_cls, mock_scrape, mock_get_client):
+    mock_supabase = MagicMock()
+    mock_get_client.return_value = mock_supabase
+
+    mock_scrape.return_value = [SAMPLE_TICKET]
+
+    # receipt_unique_id lookup: already exists
+    mock_supabase.table.return_value.select.return_value.in_.return_value.execute.return_value = {
+        "data": [{"receipt_unique_id": "dummy"}],
+        "error": None,
+    }
+    # sync_logs update
+    mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = {
+        "data": [{"id": "log123"}],
+        "error": None,
+    }
+
+    mock_race_service_cls.return_value = MagicMock()
+
+    sync_and_save_recent_history("log123", "user1", SAMPLE_AUTH)
+
+    # since existing, upsert should not be called for insert_records
+    upsert_call = mock_supabase.table("tickets").upsert
+    assert not upsert_call.called

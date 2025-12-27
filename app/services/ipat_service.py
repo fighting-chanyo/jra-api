@@ -43,6 +43,23 @@ def _count_new_receipt_ids(supabase, receipt_unique_ids: list[str]) -> tuple[int
     return new_count, existing_count
 
 
+def _get_existing_receipt_ids(supabase, receipt_unique_ids: list[str]) -> set[str]:
+    """tickets テーブルに既に存在する receipt_unique_id の集合を返す。"""
+    if not receipt_unique_ids:
+        return set()
+    existing_ids: set[str] = set()
+    for chunk in _chunked(receipt_unique_ids, 200):
+        res = supabase.table("tickets").select("receipt_unique_id").in_("receipt_unique_id", chunk).execute()
+        data = getattr(res, "data", None) if hasattr(res, "data") else res.get("data") if isinstance(res, dict) else None
+        if not data:
+            continue
+        for row in data:
+            rid = row.get("receipt_unique_id")
+            if rid:
+                existing_ids.add(rid)
+    return existing_ids
+
+
 def _build_sync_message(new_count: int) -> str:
     if new_count <= 0:
         return "同期が完了しました。新しいデータは見つかりませんでした。"
@@ -288,9 +305,20 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
         receipt_ids = [r["receipt_unique_id"] for r in db_records]
         new_count, existing_count = _count_new_receipt_ids(supabase, receipt_ids)
 
-        # 3. DBへ保存 (Upsert)
-        logger.info("Upserting %d tickets (recent) log_id=%s", len(db_records), log_id)
-        supabase.table("tickets").upsert(db_records, on_conflict="receipt_unique_id").execute()
+        # 3. DBへ保存
+        # recent は確定情報を持たないため、既存 receipt_unique_id を更新しない（insert-only）
+        existing_ids = _get_existing_receipt_ids(supabase, receipt_ids)
+        insert_records = [r for r in db_records if r.get("receipt_unique_id") not in existing_ids]
+
+        logger.info(
+            "Inserting %d/%d tickets (recent, skip existing) log_id=%s",
+            len(insert_records),
+            len(db_records),
+            log_id,
+        )
+        if insert_records:
+            # 既存IDは除外済みなので conflict は基本起きない。安全のためupsertを使う。
+            supabase.table("tickets").upsert(insert_records, on_conflict="receipt_unique_id").execute()
 
         # --- 即時判定処理 (結果確定済みのレースがあれば判定) ---
         try:
