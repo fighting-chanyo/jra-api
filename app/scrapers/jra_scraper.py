@@ -932,8 +932,10 @@ def scrape_recent_history(creds: IpatAuth):
 
                         _debug_pause("step2")
                         page.fill("input[name='i']", creds.subscriber_number.strip())
-                        page.fill("input[name='p']", creds.password.strip())
-                        page.fill("input[name='r']", creds.pars_number.strip())
+                        # past(PC)モードが現在動作している入力対応に合わせる
+                        # input[name='p'] と input[name='r'] を入れ替える
+                        page.fill("input[name='p']", creds.pars_number.strip())
+                        page.fill("input[name='r']", creds.password.strip())
                         before_url = page.url
                         # NOTE: modern側はSPA的な遷移で「navigation」が発生しない場合がある。
                         # expect_navigationで待つとハングすることがあるため、画面要素の出現で待機する。
