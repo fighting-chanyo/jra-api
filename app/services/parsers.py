@@ -33,11 +33,21 @@ def parse_jra_csv(csv_path):
         col_map = {name: i for i, name in enumerate(header)}
         logger.info("CSV Header mapped: %s", list(col_map.keys()))
 
+        current_receipt_no = None
+        current_line_counter = 0
+
         for row in data_rows:
             # 【修正】行のいずれかのセルに「合計」が含まれていたらスキップする
             if not row or len(row) < len(header) or any("合計" in str(cell) for cell in row):
                 continue
             
+            receipt_no = row[col_map["受付番号"]]
+            if receipt_no != current_receipt_no:
+                current_receipt_no = receipt_no
+                current_line_counter = 1
+            else:
+                current_line_counter += 1
+
             try:
                 # 購入金額 (単価と合計)
                 amount_str = row[col_map["購入金額"]]
@@ -126,8 +136,8 @@ def parse_jra_csv(csv_path):
                 # DB保存用に構造化して返す
                 ticket_data = {
                     "raw": {
-                        "receipt_no": row[col_map["受付番号"]],
-                        "line_no": row[col_map["通番"]],
+                        "receipt_no": receipt_no,
+                        "line_no": current_line_counter,
                         "race_date_str": row[col_map["日付"]], # YYYYMMDD
                         "race_place": row[col_map["場名"]],
                         "race_number_str": row[col_map["レース"]], # "R"なし
