@@ -1186,10 +1186,10 @@ def scrape_recent_history(creds: IpatAuth):
                 raise
             else:
                 # ここまで来たら投票履歴一覧画面に到達している前提
-                logger.info("Checking for history items (Today & Yesterday)...")
+                logger.info("Checking for history items (Today only)...")
+                # NOTE: サイト仕様上、Todayタブが必要十分な集合を含む（Yesterdayは節境界でpastと重複しやすい）
                 target_days = [
                     ("Today", "label[for='refer-today']", 0),
-                    ("Yesterday", "label[for='refer-before']", 1),
                 ]
 
                 for day_name, selector, day_offset in target_days:

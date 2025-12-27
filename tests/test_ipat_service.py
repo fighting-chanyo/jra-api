@@ -42,6 +42,27 @@ def test_map_ticket_to_db_format():
     assert result["receipt_unique_id"] is not None
     assert result["source"] == "IPAT_SYNC"
 
+
+def test_receipt_unique_id_line_no_normalized():
+    user_id = "test_user"
+    t1 = {
+        **SAMPLE_TICKET,
+        "raw": {
+            **SAMPLE_TICKET["raw"],
+            "line_no": "01",
+        },
+    }
+    t2 = {
+        **SAMPLE_TICKET,
+        "raw": {
+            **SAMPLE_TICKET["raw"],
+            "line_no": 1,
+        },
+    }
+    r1 = _map_ticket_to_db_format(t1, user_id)
+    r2 = _map_ticket_to_db_format(t2, user_id)
+    assert r1["receipt_unique_id"] == r2["receipt_unique_id"]
+
 @patch("app.services.ipat_service.get_supabase_client")
 @patch("app.services.ipat_service.scrape_past_history_csv")
 def test_sync_and_save_past_history_success(mock_scrape, mock_get_client):
@@ -136,9 +157,11 @@ def test_sync_and_save_recent_history_skip_existing(mock_race_service_cls, mock_
 
     mock_scrape.return_value = [SAMPLE_TICKET]
 
+    existing_receipt_id = _map_ticket_to_db_format(SAMPLE_TICKET, "user1")["receipt_unique_id"]
+
     # receipt_unique_id lookup: already exists
     mock_supabase.table.return_value.select.return_value.in_.return_value.execute.return_value = {
-        "data": [{"receipt_unique_id": "dummy"}],
+        "data": [{"receipt_unique_id": existing_receipt_id}],
         "error": None,
     }
     # sync_logs update

@@ -71,6 +71,36 @@ def _normalize_date(date_str):
         return ""
     return str(date_str).replace("/", "").replace("-", "").replace("年", "").replace("月", "").replace("日", "").strip()
 
+
+_FW_TO_HW_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
+
+
+def _normalize_receipt_no(receipt_no) -> str:
+    """受付番号を正規化（空白除去・全角数字→半角数字）。
+
+    先頭ゼロの意味が不明なため int 化はしない。
+    """
+    if receipt_no is None:
+        return ""
+    return str(receipt_no).strip().translate(_FW_TO_HW_DIGITS)
+
+
+def _normalize_line_no(line_no) -> str:
+    """通番を正規化（空白除去・全角数字→半角数字・先頭ゼロ吸収）。
+
+    CSVは "01" のようにゼロ埋めされる一方、recentは 1 のように数値になりがちなので、
+    ここを揃えないと同一馬券でも receipt_unique_id が一致しない。
+    """
+    if line_no is None:
+        return ""
+    s = str(line_no).strip().translate(_FW_TO_HW_DIGITS)
+    if not s:
+        return ""
+    try:
+        return str(int(s))
+    except Exception:
+        return s
+
 def _normalize_horse_numbers(content):
     """馬番リストを正規化（ゼロ埋め）し、可能ならソートする"""
     new_content = content.copy()
@@ -126,7 +156,9 @@ def _map_ticket_to_db_format(ticket_data, user_id):
     content_str = json.dumps(normalized_content, sort_keys=True)
     
     # 【修正】日付を含めて、日をまたいでもユニークな文字列を生成する
-    unique_str = f"{normalized_date}-{raw['receipt_no']}-{raw['line_no']}-{content_str}"
+    normalized_receipt_no = _normalize_receipt_no(raw.get("receipt_no"))
+    normalized_line_no = _normalize_line_no(raw.get("line_no"))
+    unique_str = f"{normalized_date}-{normalized_receipt_no}-{normalized_line_no}-{content_str}"
     receipt_unique_id = hashlib.md5(unique_str.encode()).hexdigest()
 
     # total_points の取得または計算
