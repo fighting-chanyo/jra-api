@@ -9,6 +9,45 @@ from app.scrapers.jra_scraper import scrape_past_history_csv, scrape_recent_hist
 
 logger = logging.getLogger(__name__)
 
+
+def _chunked(iterable, size: int):
+    if size <= 0:
+        raise ValueError("size must be > 0")
+    for i in range(0, len(iterable), size):
+        yield iterable[i : i + size]
+
+
+def _count_new_receipt_ids(supabase, receipt_unique_ids: list[str]) -> tuple[int, int]:
+    """既存の receipt_unique_id を照会し、新規件数と既存件数を返す。
+
+    Returns:
+        (new_count, existing_count)
+    """
+    if not receipt_unique_ids:
+        return 0, 0
+
+    existing_ids: set[str] = set()
+    # PostgREST のURL長やIN句制限を避けるためチャンクする
+    for chunk in _chunked(receipt_unique_ids, 200):
+        res = supabase.table("tickets").select("receipt_unique_id").in_("receipt_unique_id", chunk).execute()
+        data = getattr(res, "data", None) if hasattr(res, "data") else res.get("data") if isinstance(res, dict) else None
+        if not data:
+            continue
+        for row in data:
+            rid = row.get("receipt_unique_id")
+            if rid:
+                existing_ids.add(rid)
+
+    existing_count = len(existing_ids)
+    new_count = max(0, len(set(receipt_unique_ids)) - existing_count)
+    return new_count, existing_count
+
+
+def _build_sync_message(new_count: int) -> str:
+    if new_count <= 0:
+        return "同期が完了しました。新しいデータは見つかりませんでした。"
+    return f"同期が完了しました。{new_count}件の新しいデータが見つかりました。"
+
 def _normalize_date(date_str):
     """日付文字列をYYYYMMDD形式に正規化する"""
     if not date_str:
@@ -112,7 +151,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
             # チケットが0件でも正常終了とする
             supabase.table("sync_logs").update({
                 "status": "COMPLETED",
-                "message": "同期が完了しました。投票履歴は見つかりませんでした。"
+                "message": _build_sync_message(0)
             }).eq("id", log_id).execute()
             logger.info("IPAT past sync completed (no tickets) log_id=%s elapsed=%.1fs", log_id, time.monotonic() - started_at)
             return
@@ -124,6 +163,9 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
         unique_records_map = {r["receipt_unique_id"]: r for r in db_records}
         db_records = list(unique_records_map.values())
 
+        receipt_ids = [r["receipt_unique_id"] for r in db_records]
+        new_count, existing_count = _count_new_receipt_ids(supabase, receipt_ids)
+
         # 3. DBへ保存 (Upsert)
         logger.info("Upserting %d tickets (past) log_id=%s", len(db_records), log_id)
         supabase.table("tickets").upsert(db_records, on_conflict="receipt_unique_id").execute()
@@ -131,7 +173,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
         # --- 成功時のログ更新（既存の upsert の直後に置き換え） ---
         update_payload = {
             "status": "COMPLETED",
-            "message": f"同期が完了しました。{len(db_records)} 件の投票履歴を保存しました。"
+            "message": _build_sync_message(new_count)
         }
         res = supabase.table("sync_logs").update(update_payload).eq("id", log_id).execute()
 
@@ -149,7 +191,7 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
                 insert_payload = {
                     "id": log_id,
                     "status": "COMPLETED",
-                    "message": f"同期が完了しました。{len(db_records)} 件の投票履歴を保存しました。"
+                    "message": _build_sync_message(new_count)
                 }
                 ins_res = supabase.table("sync_logs").insert(insert_payload).execute()
                 ins_error = getattr(ins_res, "error", None) if hasattr(ins_res, "error") else ins_res.get("error") if isinstance(ins_res, dict) else None
@@ -161,9 +203,11 @@ def sync_and_save_past_history(log_id: str, user_id: str, creds: IpatAuth):
                 logger.info("sync_logs updated successfully (past) log_id=%s", log_id)
 
         logger.info(
-            "IPAT past sync completed log_id=%s tickets=%d elapsed=%.1fs",
+            "IPAT past sync completed log_id=%s fetched_unique=%d new=%d existing=%d elapsed=%.1fs",
             log_id,
             len(db_records),
+            new_count,
+            existing_count,
             time.monotonic() - started_at,
         )
 
@@ -235,11 +279,14 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
             # チケットが0件でも正常終了とする
             update_payload = {
                 "status": "COMPLETED",
-                "message": "同期が完了しました。直近の投票履歴は見つかりませんでした。"
+                "message": _build_sync_message(0)
             }
             supabase.table("sync_logs").update(update_payload).eq("id", log_id).execute()
             logger.info("IPAT recent sync completed (no tickets) log_id=%s elapsed=%.1fs", log_id, time.monotonic() - started_at)
             return
+
+        receipt_ids = [r["receipt_unique_id"] for r in db_records]
+        new_count, existing_count = _count_new_receipt_ids(supabase, receipt_ids)
 
         # 3. DBへ保存 (Upsert)
         logger.info("Upserting %d tickets (recent) log_id=%s", len(db_records), log_id)
@@ -259,7 +306,7 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
         # --- 成功時のログ更新 ---
         update_payload = {
             "status": "COMPLETED",
-            "message": f"同期が完了しました。{len(db_records)} 件の投票履歴を保存しました。"
+            "message": _build_sync_message(new_count)
         }
         res = supabase.table("sync_logs").update(update_payload).eq("id", log_id).execute()
         
@@ -269,9 +316,11 @@ def sync_and_save_recent_history(log_id: str, user_id: str, creds: IpatAuth):
             logger.warning("sync_logs row not found for update (recent) log_id=%s", log_id)
         
         logger.info(
-            "IPAT recent sync completed log_id=%s tickets=%d elapsed=%.1fs",
+            "IPAT recent sync completed log_id=%s fetched_unique=%d new=%d existing=%d elapsed=%.1fs",
             log_id,
             len(db_records),
+            new_count,
+            existing_count,
             time.monotonic() - started_at,
         )
 

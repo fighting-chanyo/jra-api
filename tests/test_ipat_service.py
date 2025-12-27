@@ -55,6 +55,8 @@ def test_sync_and_save_past_history_success(mock_scrape, mock_get_client):
     # Mock DB responses
     mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = {"data": [{"id": "log123"}], "error": None}
     mock_supabase.table.return_value.upsert.return_value.execute.return_value = {"data": [], "error": None}
+    # Existing receipt_unique_id lookup (no existing => new_count=1)
+    mock_supabase.table.return_value.select.return_value.in_.return_value.execute.return_value = {"data": [], "error": None}
 
     # Execute
     sync_and_save_past_history("log123", "user1", SAMPLE_AUTH)
@@ -75,7 +77,7 @@ def test_sync_and_save_past_history_success(mock_scrape, mock_get_client):
     # Check if the last call was for completion
     last_call_args = update_call.call_args[0][0]
     assert last_call_args["status"] == "COMPLETED"
-    assert "1 件" in last_call_args["message"]
+    assert "1件の新しいデータが見つかりました" in last_call_args["message"]
 
 @patch("app.services.ipat_service.get_supabase_client")
 @patch("app.services.ipat_service.scrape_past_history_csv")
@@ -102,7 +104,7 @@ def test_sync_and_save_past_history_no_tickets(mock_scrape, mock_get_client):
     assert update_call.called
     last_call_args = update_call.call_args[0][0]
     assert last_call_args["status"] == "COMPLETED"
-    assert "投票履歴は見つかりませんでした" in last_call_args["message"]
+    assert "新しいデータは見つかりませんでした" in last_call_args["message"]
 
 @patch("app.services.ipat_service.get_supabase_client")
 @patch("app.services.ipat_service.scrape_past_history_csv")
