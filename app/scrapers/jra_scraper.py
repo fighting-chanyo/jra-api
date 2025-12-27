@@ -531,7 +531,12 @@ def scrape_recent_history(creds: IpatAuth):
 
     with _playwright_slot():
         with sync_playwright() as p:
-            is_headless = not _env_bool("HEADLESS", True)
+            # Cloud Run等のXが無い環境で headed を起動すると即死するため、
+            # HEADLESS のデフォルトは True（headless）にする。
+            is_headless = _env_bool("HEADLESS", True)
+            if not is_headless and not (os.getenv("DISPLAY") or ""):
+                logger.warning("$DISPLAY is not set; forcing headless browser.")
+                is_headless = True
             slow_mo_ms = _env_int("PLAYWRIGHT_SLOW_MO_MS", 0)
             browser = p.chromium.launch(
                 headless=is_headless,
