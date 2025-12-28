@@ -420,7 +420,9 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str, prefer_future:
                         if prefix and val_div:
                             p_text = prefix.get_text(strip=True)
                             v_text = val_div.get_text(strip=True)
-                            nums = [x.strip() for x in v_text.replace(" ", "").split(",") if x.strip()]
+                            # 軸馬などが「05－09」のようにハイフン繋ぎで来る場合があるため分割する
+                            normalized_text = v_text.replace(" ", "").replace("－", ",").replace("-", ",")
+                            nums = [x.strip() for x in normalized_text.split(",") if x.strip()]
                             
                             if "相手" in p_text:
                                 partners.extend(nums)
@@ -452,7 +454,9 @@ def _parse_recent_detail_html(html_content, receipt_no, date_str, prefer_future:
                         val_div = flex.select_one(".ng-binding")
                         if val_div:
                             v_text = val_div.get_text(strip=True)
-                            nums = [x.strip() for x in v_text.replace(" ", "").split(",") if x.strip()]
+                            # フォーメーションも同様にハイフン区切りを考慮
+                            normalized_text = v_text.replace(" ", "").replace("－", ",").replace("-", ",")
+                            nums = [x.strip() for x in normalized_text.split(",") if x.strip()]
                             selections.append(nums)
                 else:
                     # Fallback for other types if they appear in flex
